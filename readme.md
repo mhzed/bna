@@ -66,8 +66,3 @@ After which you will see in proj1/
 
 Now you can just copy proj1/ folder to anywhere and it will run without dependency problems, in otherwords proj1/
 is now completely self-contained.
-
-
-
-
-

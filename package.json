@@ -33,6 +33,6 @@
     "nodeunit": "*"
   },
   "bin": {
-    "bna": "./bin/bna"
+    "bna": "./bin/bna.js"
   }
 }
