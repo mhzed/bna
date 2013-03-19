@@ -1,0 +1,38 @@
+{
+  "name": "bna",
+  "version": "0.0.1",
+  "description": "build node app",
+  "main": "./lib/bna.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": "",
+  "author": {
+    "name": "zed zhou",
+    "url": "http://mhzed.com",
+    "email": "mhzedd@gmail.com"
+  },
+  "homepage": "https://github.com/mhzed/bna",
+  "keywords": [
+    "require",
+    "source",
+    "analyze"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "optimist": "0.3.5",
+    "async": "0.2.5",
+    "under_score": "0.1.0",
+    "fstream-npm": "0.1.4",
+    "wrench": "1.4.4",
+    "semver": "1.1.4",
+    "detective": "2.0.0",
+    "resolve": "0.3.0"
+  },
+  "devDependencies": {
+    "nodeunit": "*"
+  },
+  "bin": {
+    "bna": "./bin/bna"
+  }
+}
