@@ -36,7 +36,8 @@ modules, so you structure your dev folder like this:
 
 Essentially you place "global" modules (the ones installed by npm from npm's central repository) in
 *workspace/node_modules*, and your own modules in *workspace/projects/node_modules*.  As you are developing
-in proj1/, proj2/, my_module1/, you just require what's needed.  After a while, you reach a point where
+in proj1/, proj2/, my_module1/, you just require what's needed in your source code.  After a while, you reach a point
+where:
 
 ### my_module1/ is good enough to be shared with the world (npm publish).
 
@@ -47,7 +48,9 @@ But you've been lazy and haven't updated dependencies in package.json, at this p
 
 bna scans all source code in *my_module1/*, figures out the dependency, and merge it into package.json.  If you've
 already defined dependency in package.json then bna tries to *merge* by checking if detected version is compatible with
-the version sepcified in package.json
+the version sepcified in package.json.
+
+* To exclude files from being analyzed for dependency, use .npmignore file
 
 ### proj1/ is ready for deployment
 
@@ -64,5 +67,5 @@ After which you will see in proj1/
             express/
             my_module1/
 
-Now you can just copy proj1/ folder to anywhere and it will run without dependency problems, in otherwords proj1/
+Now you can just copy proj1/ folder to anywhere and it will run without dependency problems, in other words proj1/
 is now completely self-contained.
