@@ -1,7 +1,7 @@
 # bna
 
 For building a node application.  More specifically, bna intelligently figures out your app's node module depedency (to
-be expected by npm in package.json )by parsing and scanning through source code AST.
+be expected by npm in package.json) by parsing and scanning through source code AST.
 
 ## Installation
 
