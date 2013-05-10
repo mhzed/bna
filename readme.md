@@ -9,7 +9,7 @@ npm install bna
 
 ## Usage
 
-From command line, just type
+In your node projects' root directory (where package.json is), from command line just type
 
     bna
 
