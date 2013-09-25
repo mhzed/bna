@@ -1,12 +1,12 @@
 {
   "name": "bna",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "build node app",
   "main": "./lib/bna.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "repository": "",
+  "repository": "https://github.com/mhzed/bna",
   "author": {
     "name": "zed zhou",
     "url": "http://mhzed.com",
