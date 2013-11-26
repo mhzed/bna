@@ -36,17 +36,31 @@ if (!(argv.b || argv.p || argv.c )) {
     }
 }
 
-if (argv.b || argv.p) {
+if (argv.p) {
     bna.writePackageJson(process.cwd(), function(err) {
         if (err) console.log(err.stack);
         else console.log("package.json dependencies updated");
     })
 }
-if (argv.c || argv.b) {
+else if (argv.c) {
     bna.copyExternDependModules(process.cwd(), function(msg) {
         console.log(msg);
     },function(err) {
         if (err) console.log(err.stack);
         else console.log("copying finished");
+    })
+}
+else if (argv.b) {
+    bna.writePackageJson(process.cwd(), function(err) {
+        if (err) console.log(err.stack);
+        else {
+            console.log("package.json dependencies updated");
+            bna.copyExternDependModules(process.cwd(), function(msg) {
+                console.log(msg);
+            },function(err) {
+                if (err) console.log(err.stack);
+                else console.log("copying finished");
+            })
+        }
     })
 }
