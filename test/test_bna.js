@@ -1,3 +1,5 @@
+#!/usr/bin/env nodeunit
+require('source-map-support').install();
 var bna  = require("../lib/bna");
 var path = require("path");
 var _    = require("under_score");
@@ -15,7 +17,7 @@ module.exports["test npmDependencies"] = function(test) {
 
         test.done();
     })
-}
+};
 
 module.exports["test externDependModules"] = function(test) {
     bna.externDependModules(require.resolve("./projects/p1"), function(err, deps){
@@ -26,7 +28,7 @@ module.exports["test externDependModules"] = function(test) {
         test.equal(_(deps).find(function(d) { return require == 'p1_x'}), undefined, 'p1_x should not be found');
         test.done();
     })
-}
+};
 
 module.exports["test npmDependencies on dir"] = function(test) {
     bna.npmDependencies(require.resolve("./projects/p2"), function(err, deps){
@@ -43,7 +45,7 @@ module.exports["test npmDependencies on dir"] = function(test) {
             test.done();
         })
     })
-}
+};
 
 module.exports["test externDependModules on dir"] = function(test) {
     bna.externDependModules(require.resolve("./projects/p2"), function(err, deps){
@@ -60,7 +62,7 @@ module.exports["test externDependModules on dir"] = function(test) {
             test.done();
         })
     })
-}
+};
 
 module.exports["test writePackageJson"] = function(test) {
     var p2dir = path.join(__dirname, "./projects/p2");
@@ -84,8 +86,8 @@ module.exports["test writePackageJson"] = function(test) {
             pkgjson.dependencies.b = "1.x";
             fs.writeFileSync(p2pkgfile, JSON.stringify(pkgjson, null, 2), 'utf8');
             bna.writePackageJson(p2dir, function(err) {
-                test.equal(/a: 0\.0\.1 does not/.test(err.toString()), true, "a error");
-                test.equal(/b: 0\.0\.1 does not/.test(err.toString()), true, "b error");
+                test.equal(err && /a: 0\.0\.1 does not/.test(err.toString()), true, "a error");
+                test.equal(err && /b: 0\.0\.1 does not/.test(err.toString()), true, "b error");
                 cb();
             });
         },
@@ -100,7 +102,7 @@ module.exports["test writePackageJson"] = function(test) {
         test.done();
     })
 
-}
+};
 
 module.exports["test copyExternDependModules"] = function(test) {
     var p2dir = path.join(__dirname, "./projects/p2");
@@ -117,7 +119,7 @@ module.exports["test copyExternDependModules"] = function(test) {
             test.equal(fs.existsSync(path.join(p2dir, 'node_modules', 'a')), true, "module a is copied");
             test.equal(fs.existsSync(path.join(p2dir, 'node_modules', 'b')), true, "module b is copied");
             cb();
-        },
+        }
     ], function(err) {
         if (!err) { // clean up
             wrench.rmdirSyncRecursive(path.join(p2dir, 'node_modules', 'a'));
@@ -127,4 +129,47 @@ module.exports["test copyExternDependModules"] = function(test) {
         test.ifError(err);
         test.done();
     })
-}
+};
+
+module.exports["test fuse circular"] = function(test) {
+
+    var spath = require.resolve("./circular/main.js");
+    var dpath = path.join(path.dirname(spath), "fused.js")
+    var src = bna.fuse(spath)[0];
+    fs.writeFileSync(dpath, src);
+
+    var logs = require(spath);
+    var logs1 = require(dpath);
+    fs.unlinkSync(dpath);
+    // the test is to simply executed fused and non-fused versions, make sure output is exactly the same.
+    test.deepEqual(logs, logs1, "same load order");
+    test.done();
+};
+
+module.exports["test fuse binary components"] = function(test) {
+
+    var spath = require.resolve("./usews.js");
+    var fusedir = path.resolve(path.dirname(spath), "usews.fuse")
+    bna.fuseTo(spath, fusedir);
+
+    //console.log(src);
+    test.equal(fs.existsSync(path.join(fusedir, "usews.fused.js")) , true, "fused file");
+    test.equal(fs.existsSync(path.join(fusedir, "websocket/build/Release/xor.node")) , true, "binary 1");
+    test.equal(fs.existsSync(path.join(fusedir, "websocket/build/Release/validation.node")) , true, "binary 2");
+    require("wrench").rmdirSyncRecursive(fusedir);
+    test.done()
+};
+
+module.exports["test conflict modules"] = function(test) {
+    var pdir = path.resolve(__dirname, "./projects");
+    var ddir = path.resolve(__dirname, "./");
+    bna.fuseDirTo(pdir, ddir, { aslib: true, dstfile: "test.project.fuse.js"}, function() {
+        var ms = require(path.resolve(__dirname, "test.project.fuse.js"))
+
+        test.equal( ms['p1@0.0.1'] !== undefined, true, "p1 exists");
+        test.equal( ms['p1@0.0.2'] !== undefined, true, "p1 exists");
+        fs.unlinkSync(path.join(ddir, "test.project.fuse.js"));
+        test.done();
+
+    })
+};

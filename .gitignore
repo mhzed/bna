@@ -1,4 +1,2 @@
 *.map
-*.coffee
-test/
 node_modules/
