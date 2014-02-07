@@ -463,7 +463,7 @@ module.exports = bna = {
     [content, binaryunits, warnings] = bna.fuse(filepath, opts)
     console.log(warning) for warning in bna.prettyWarnings(warnings)
     wrench.mkdirSyncRecursive(dstdir);
-    dstfile = opts.dstfile or path.resolve(dstdir, path.basename(filepath,".js") + ".fused.js");
+    dstfile = path.resolve(dstdir, opts.dstfile or (path.basename(filepath,".js") + ".fused.js"))
     if opts.verbose then console.log("Generating #{path.relative('.', dstfile)}")
     fs.writeFileSync(dstfile, content);
     for bunit in binaryunits

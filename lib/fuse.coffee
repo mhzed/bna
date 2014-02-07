@@ -111,13 +111,16 @@ module.exports = bigcat = {
 
       for key,unit of packages
         code += "'#{key}':  __global_units.__require('#{unit.key}'),\n"
-      code += "};";
+      code += "};\n";
     else
       code +=
         """
-        module.exports = __global_units.__require("#{_(fileunits).last().key}");
+        module.exports = __global_units.__require("#{_(fileunits).last().key}");\n
         """
-
+    code +=
+      """
+        if (!require) require = function(name) { return module.exports[name]; }
+      """
     [code, binunits]
 
 
