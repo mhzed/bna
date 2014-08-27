@@ -8,6 +8,11 @@ ast         = require("./ast");
 wrench      = require("wrench");
 
 module.exports = bna = {
+  quiet  : false,
+
+  warn  : (msg)->
+    if not bna.quiet then console.log msg
+
   _cache : {},    # dep.path => { dep object }
 
   ###
@@ -91,7 +96,7 @@ module.exports = bna = {
         if allrequires.expressions.length > 0  # complex requires are ignored, thus print warnings
           expressions = bna.findRequire(file, {loc: true}).expressions
           for [expr,loc] in expressions
-            console.log "Warning: ignored require expression at #{loc.file}:#{loc.start.line}"
+            bna.warn "Warning: ignored require expression at #{loc.file}:#{loc.start.line}"
 
         requires = (name for [name,loc] in allrequires.strings); # find all requires where argument is string!
         async.map(# resolve required items to actual file path
@@ -399,23 +404,25 @@ module.exports = bna = {
 
     modules = { strings : [], expressions : [] };
     # fast test for 'require'
-    if (src.indexOf('require') == -1) then return modules;
+    if (src.indexOf('require') == -1 or /\.json$/i.test(filepath) ) then return modules;
 
-    ast.traverse(esprima.parse(src, opt), (node)->
-      if ast.isRequire(node)
-        if opt.loc
-          node.loc.file = filepath
-          if (node.arguments.length && node.arguments[0].type == 'Literal')
-            modules.strings.push([node.arguments[0].value, node.loc])
+    try
+      ast.traverse(esprima.parse(src, opt), (node)->
+        if ast.isRequire(node)
+          if opt.loc
+            node.loc.file = filepath
+            if (node.arguments.length && node.arguments[0].type == 'Literal')
+              modules.strings.push([node.arguments[0].value, node.loc])
+            else
+              modules.expressions.push([node.arguments[0], node.loc])
           else
-            modules.expressions.push([node.arguments[0], node.loc])
-        else
-          if (node.arguments.length && node.arguments[0].type == 'Literal')
-            modules.strings.push([node.arguments[0].value])
-          else
-            modules.expressions.push([node.arguments[0]])
-    )
-
+            if (node.arguments.length && node.arguments[0].type == 'Literal')
+              modules.strings.push([node.arguments[0].value])
+            else
+              modules.expressions.push([node.arguments[0]])
+      )
+    catch e
+      throw new Error("Unable to parse #{filepath}, original error is\n#{e.stack}")
     return modules;
 
   # filepath:  path to the file to fuse
@@ -461,7 +468,7 @@ module.exports = bna = {
     opts ?= {}
     filepath = path.resolve(filepath)
     [content, binaryunits, warnings] = bna.fuse(filepath, opts)
-    console.log(warning) for warning in bna.prettyWarnings(warnings)
+    bna.warn(warning) for warning in bna.prettyWarnings(warnings)
     wrench.mkdirSyncRecursive(dstdir);
     dstfile = path.resolve(dstdir, opts.dstfile or (path.basename(filepath,".js") + ".fused.js"))
     if opts.verbose then console.log("Generating #{path.relative('.', dstfile)}")
