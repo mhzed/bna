@@ -20,7 +20,7 @@ Abbreviation of "build node application".  It does a few things:
 
 ## Installation
 
-npm install bna
+npm install -g bna
 
 ## Usage
 
