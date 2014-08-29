@@ -20,20 +20,20 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "under_score": "0.1.0",
-    "optimist": "0.3.5",
-    "resolve": "0.3.0",
     "async": "0.2.5",
     "esprima": "1.0.4",
-    "wrench": "1.4.4",
     "fstream-npm": "0.1.4",
-    "semver": "1.1.4"
+    "optimist": "0.3.5",
+    "resolve": "0.3.0",
+    "semver": "1.1.4",
+    "source-map-support": "^0.2.7",
+    "under_score": "0.1.0",
+    "wrench": "1.4.4"
   },
   "devDependencies": {
-    "nodeunit": "0.7.4",
-    "coffee-script": "1.6.3"
+    "nodeunit": "0.7.4"
   },
   "bin": {
-    "bna": "./bin/bna.js"
+    "bna": "./bin/bnacmd.js"
   }
 }

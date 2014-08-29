@@ -407,22 +407,25 @@ module.exports = bna = {
     if (src.indexOf('require') == -1 or /\.json$/i.test(filepath) ) then return modules;
 
     try
-      ast.traverse(esprima.parse(src, opt), (node)->
-        if ast.isRequire(node)
-          if opt.loc
-            node.loc.file = filepath
-            if (node.arguments.length && node.arguments[0].type == 'Literal')
-              modules.strings.push([node.arguments[0].value, node.loc])
-            else
-              modules.expressions.push([node.arguments[0], node.loc])
-          else
-            if (node.arguments.length && node.arguments[0].type == 'Literal')
-              modules.strings.push([node.arguments[0].value])
-            else
-              modules.expressions.push([node.arguments[0]])
-      )
+      src_ast = esprima.parse(src, opt)
     catch e
-      throw new Error("Unable to parse #{filepath}, original error is\n#{e.stack}")
+      console.log ("Ignoring #{filepath}, esprima failed to parse due to: #{e}")
+      return modules
+
+    ast.traverse(src_ast, (node)->
+      if ast.isRequire(node)
+        if opt.loc
+          node.loc.file = filepath
+          if (node.arguments.length && node.arguments[0].type == 'Literal')
+            modules.strings.push([node.arguments[0].value, node.loc])
+          else
+            modules.expressions.push([node.arguments[0], node.loc])
+        else
+          if (node.arguments.length && node.arguments[0].type == 'Literal')
+            modules.strings.push([node.arguments[0].value])
+          else
+            modules.expressions.push([node.arguments[0]])
+    )
     return modules;
 
   # filepath:  path to the file to fuse

@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env coffee
 
 optimist = require('optimist')
     .usage('Build modules and dependencies for app in current dir.\nUsage: -b -p -c -f file -o out/')
