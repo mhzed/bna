@@ -16,7 +16,7 @@ optimist = require('optimist')
     .describe('c', 'copy depended external modules to local node_modules dir')
     .describe('f', 'generate a single executable js file, see doc.')
     .describe('fuselib', 'fuse to a library to export modules, see doc.')
-    .describe("o", 'place fused files in this dir. Optional, default is ./')
+    .describe("o", 'specify output file or dir for fuse. Optional, default is ./')
     .describe("q", 'quite mode. No warnings')
 ;
 argv =  optimist.argv;

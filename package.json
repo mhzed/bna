@@ -1,6 +1,6 @@
 {
   "name": "bna",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "description": "build node app",
   "main": "./lib/bna.js",
   "scripts": {
@@ -16,7 +16,10 @@
   "keywords": [
     "require",
     "source",
-    "analyze"
+    "analyze",
+    "concat",
+    "combine",
+    "javascript"
   ],
   "license": "MIT",
   "dependencies": {
@@ -35,5 +38,8 @@
   },
   "bin": {
     "bna": "./bin/bnacmd.js"
+  },
+  "scripts" : {
+    "test" : "nodeunit ./test/test_bna.js"
   }
 }

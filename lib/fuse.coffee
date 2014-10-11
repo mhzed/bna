@@ -13,6 +13,7 @@ _    = require "under_score"
 
 module.exports = bigcat = {
 
+  # moduleName: main module name, code is sealed with this.moduleName = ....
   # units:  array of jnits
   # aslib:  when false (default), generate code normally: runs the last file in units
   #         when true, generate code that export all detected modules as a map,
@@ -20,36 +21,40 @@ module.exports = bigcat = {
   # srcCode:  string, the fused source code
   # binaryUnits: array of binary (*.node) modules, to bundle the final executable package do:
   #              copy from <unit.fpath> to <dst_dir>/<unit.key> for unit in binaryUnits
-  generate : (units, aslib)->
+  generate : (moduleName, units, aslib)->
     coreunits = (unit for unit in units when unit.isCore)
     binunits = (unit for unit in units when unit.isBinary)
     fileunits = (unit for unit in units when not (unit.isCore)) # includes binunits
 
-    # for non core untis, figure out a unique key in __global_units
+    # for non core untis, figure out a unique key in __m
     bigcat.makeKeys(fileunits);
     unit.key = unit.fpath for unit in coreunits # core units: key = fpath
 
     # store the core modules in the global module map
     sCoreRequires =
       ("""
-      '#{unit.key}': {
+      __m["#{unit.key}"] = {
         status  : "loaded",
-        module  : {exports: require('#{unit.key}')}
-      }
-      """ for unit in coreunits.concat(binunits)).join(',\n')
+        module  : {exports: __m.__builtin_require('#{unit.key}')}
+      };
+      """ for unit in coreunits.concat(binunits)).join('\n')
+
     code =
       """
-      var __global_units = {
-      __builtin_require: require,
-      __require: function(key) {
-        var m = __global_units[key];
+      this.#{moduleName} = (function() {
+
+      var __m = {};
+      if (typeof require === 'undefined')
+        __m.__builtin_require = function() {};
+      else
+        __m.__builtin_require = require;
+      __m.__require = function(key) {
+        var m = __m[key];
         if (m.status === null)
           m.loader.call();
         return m.module.exports;
-      },
-      #{sCoreRequires}
       };
-
+      #{sCoreRequires}
 
       """
 
@@ -58,7 +63,7 @@ module.exports = bigcat = {
       if path.extname(unit.fpath) == ".json"
         code +=
           """
-          __global_units["#{unit.key}"] = {
+          __m["#{unit.key}"] = {
             status: "loaded",
             module: { exports: #{unit.src} }
           };
@@ -69,36 +74,33 @@ module.exports = bigcat = {
         pkginfo = if unit.package then "#{unit.package.name}@#{unit.package.version or ''}" else ""
         code +=
         """
-        __global_units["#{unit.key}"] = {
+        __m["#{unit.key}"] = {
           status: null,
           module: { #{if unit.package then "package: #{JSON.stringify(unit.package)}," else ""}
             exports: {} },
           loader: (function() {
-            var module = __global_units["#{unit.key}"].module;
+            var module = __m["#{unit.key}"].module;
             var exports = module.exports;
             var require = function(name) {
               var namemap = {
         #{lmapcode}
               }
-              return __global_units.__require(namemap[name]);
+              var k = namemap[name];
+              return k ? __m.__require(k) : __m.__builtin_require(name);
             }
-            if (__global_units.__builtin_require) require.resolve = __global_units.__builtin_require.resolve;
-            __global_units["#{unit.key}"].status = 'loading';
-
+            if (__m.__builtin_require) require.resolve = __m.__builtin_require.resolve;
+            __m["#{unit.key}"].status = 'loading';
         //******** begin #{unit.key} module: #{pkginfo} ************
         #{unit.src}
         //******** end #{unit.key} module: #{pkginfo}************
-
-            __global_units["#{unit.key}"].status = 'loaded';
+            __m["#{unit.key}"].status = 'loaded';
           }).bind(this)
         };
 
         """
     # seal the code
-    code += "if (module === undefined) module = {};\n"
-
     if aslib
-      code += "module.exports = {\n"
+      code += "return {\n"
       packages = {}
       for unit in fileunits when unit.package
         if unit.package.name of packages
@@ -110,16 +112,17 @@ module.exports = bigcat = {
           packages[unit.package.name] = unit
 
       for key,unit of packages
-        code += "'#{key}':  __global_units.__require('#{unit.key}'),\n"
+        code += "'#{key}':  __m.__require('#{unit.key}'),\n"
       code += "};\n";
     else
       code +=
         """
-        module.exports = __global_units.__require("#{_(fileunits).last().key}");\n
+        return __m.__require("#{_(fileunits).last().key}");\n
         """
     code +=
       """
-        if (!require) require = function(name) { return module.exports[name]; }
+        }).call(this);
+        if (typeof module !== 'undefined') module.exports = this.#{moduleName};
       """
     [code, binunits]
 

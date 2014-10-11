@@ -6,16 +6,15 @@ Abbreviation of "build node application".  It does a few things:
 * copy package dependencies to local ./node_modules folder, once dependencies are figured out
 * code "fusion":  fancy word for generating a single js file by merging all of its dependencies together:
     - no it's not simple code concatenation: generated js file runs without modification
-    - circular require is supported:  as long as nodejs is happy with original code, so shall generated js file
-      make nodejs happy.
+    - circular require is supported, even in browser.
     - bna knows about the binary modules (.node files): it will bundle them together with generated js and
       everything should work seemlessly.
     - yes it's kind of like [browserify](http://browserify.org), but
-        * the goals are different:  bna aims to transform your awesome nodejs app into a single js file, makes it
-          easier to obfuscate/distribute your code.  Unlike browserify, it does not inject implementation
-          of nodejs apis.  The only code it injects are the scaffolding code to make "require" work.
-        * you can use bna to "fuse" browser javascript as well:  organize your code using module/require, and then
-          fuse all code into a single file to be embedded in HTML.
+        * fuse does not inject implementation of nodejs APIs, to run in browser
+        * though you can use "fuse" browser javascript files:  organize your code using module/require, and then
+          fuse all code into a single file to be embedded in HTML.  But this is not the main goal for 'fuse'
+    - fuse aims to transform your awesome nodejs app into a single js file, makes it easier to obfuscate/distribute 
+      your code.
 
 
 ## Installation
@@ -122,15 +121,19 @@ You will then have file
 
     browser_lib/my.browser.lib.js
 
-And the file ends with:
+And use it in nodejs:
 
-    if (module === undefined) module = {};
-    module.exports = {
-        'a':  __global_units.__require('a/index.js'),
-        'b':  __global_units.__require('b/index.js'),
-        'c':  __global_units.__require('c/index.js'),
-    };
+    var lib = require("browser_lib/my.browser.lib.js");
+    lib.browser_lib   // node_module browser_lib 
+    lib.a   // node_module a 
+    lib.b   // node_module a
 
-In browser, module.exports['a'] will give you module a.
+Or embed it in html for browser:
 
-In nodejs, require("./my.browser.lib.js")['a'] gives you module a.
+    <script src="browser_lib/my.browser.lib.js"></script>
+    <script type="text/javascript">
+    this.browser_lib.browser_lib;   // the main browser_lib
+    this.browser_lib.a;             // module a.
+    </script>
+
+It goes without saying that if you want to use fused js file in browser, you must not require built-in node-modules.

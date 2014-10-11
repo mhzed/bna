@@ -452,8 +452,14 @@ module.exports = bna = {
     units = _(getreqs(unit,{})).unique (unit)->unit.fpath
     warnings = _(unit.warnings for unit in units).flatten()
 
-    ret = (require("./fuse")).generate(units, opts.aslib);
+    moduleName = bna.generateModuleName(filepath)
+    ret = (require("./fuse")).generate(moduleName, units, opts.aslib);
     ret.push(warnings)
+    ret
+
+  generateModuleName : (fullpath) ->
+    ret = path.basename(fullpath, ".js")
+    if ret.toLowerCase() == "index" then ret = path.basename(path.dirname(fullpath))
     ret
 
   # helper to turn warnings returned by "fuse" into human readable messages
@@ -573,7 +579,8 @@ module.exports = bna = {
     try
       code = esprima.parse(unit.src, {loc: false})
     catch e
-      throw new Error("While parsing #{filepath}: #{e}");
+      console.log ("Ignoring #{filepath}, esprima failed to parse due to: #{e}")
+      return unit
 
     ast.traverse(code, [ast.isRequire], (node)->
       #node.loc.fpath = filepath
