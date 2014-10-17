@@ -9,10 +9,12 @@
 
 ###
 path = require "path"
+fs   = require "fs"
 _    = require "under_score"
 
 module.exports = bigcat = {
 
+  # baseDir: for determining source map original source file location, should be the dir where output file is written
   # moduleName: main module name, code is sealed with this.moduleName = ....
   # units:  array of jnits
   # aslib:  when false (default), generate code normally: runs the last file in units
@@ -21,28 +23,38 @@ module.exports = bigcat = {
   # srcCode:  string, the fused source code
   # binaryUnits: array of binary (*.node) modules, to bundle the final executable package do:
   #              copy from <unit.fpath> to <dst_dir>/<unit.key> for unit in binaryUnits
-  generate : (moduleName, units, aslib)->
+  # includePackage: if true, include module's package.json via member 'package', default is false
+  generate : (baseDir, moduleName, units, aslib, includePackage)->
     coreunits = (unit for unit in units when unit.isCore)
-    binunits = (unit for unit in units when unit.isBinary)
+    binaryUnits = (unit for unit in units when unit.isBinary)
     fileunits = (unit for unit in units when not (unit.isCore)) # includes binunits
 
     # for non core untis, figure out a unique key in __m
     bigcat.makeKeys(fileunits);
     unit.key = unit.fpath for unit in coreunits # core units: key = fpath
 
-    # store the core modules in the global module map
+    # store the core modules (aka nodejs modules) in the global module map
     sCoreRequires =
       ("""
       __m["#{unit.key}"] = {
         status  : "loaded",
         module  : {exports: __m.__builtin_require('#{unit.key}')}
       };
-      """ for unit in coreunits.concat(binunits)).join('\n')
+      """ for unit in coreunits.concat(binaryUnits)).join('\n')
 
     code =
       """
-      this.#{moduleName} = (function() {
-
+      (function(run) {
+        if ("object" == typeof exports && "undefined" != typeof module)
+          module.exports = run();
+        else if ("undefined" != typeof window)
+          window.#{moduleName} = run();
+        else if ("undefined" != typeof self) {
+          self.#{moduleName} = run();
+        }
+        // else if ("function" == typeof define && define.amd) // AMD not supported yet
+        // else  unknown runtime, do nothing
+      }(function() {
       var __m = {};
       if (typeof require === 'undefined')
         __m.__builtin_require = function() {};
@@ -58,14 +70,30 @@ module.exports = bigcat = {
 
       """
 
+    # [_\w\-\.\~], see RFC3986, section 2.3.
+    smRegex = /\/\/# sourceMappingURL=([_\w\-\.\~]+)/
     for unit,i in fileunits
       i = i + 1 # rebase to 1
+      smMatch = smRegex.exec(unit.src)
+      if (smMatch)
+        src = unit.src.replace("//# sourceMappingURL=", "// sourceMappingURL=")
+        unit.sm = { url: smMatch[1] }
+      else
+        src = unit.src
+
       if path.extname(unit.fpath) == ".json"
         code +=
           """
           __m["#{unit.key}"] = {
             status: "loaded",
-            module: { exports: #{unit.src} }
+            module: { exports:
+
+          """
+        if (unit.sm) then unit.sm.line = bitcat._lc(code)
+        code += src
+        code +=
+          """
+            }
           };
 
           """
@@ -73,37 +101,44 @@ module.exports = bigcat = {
         lmapcode = ("        '#{r.node.arguments[0].value}': '#{r.unit.key}'" for r in unit.requires).join(",\n")
         pkginfo = if unit.package then "#{unit.package.name}@#{unit.package.version or ''}" else ""
         code +=
-        """
-        __m["#{unit.key}"] = {
-          status: null,
-          module: { #{if unit.package then "package: #{JSON.stringify(unit.package)}," else ""}
-            exports: {} },
-          loader: (function() {
-            var module = __m["#{unit.key}"].module;
-            var exports = module.exports;
-            var require = function(name) {
-              var namemap = {
-        #{lmapcode}
+          """
+          __m["#{unit.key}"] = {
+            status: null,
+            module: { #{if unit.package and includePackage then "package: #{JSON.stringify(unit.package)}," else ""}
+              exports: {} },
+            loader: (function() {
+              var module = __m["#{unit.key}"].module;
+              var exports = module.exports;
+              var require = function(name) {
+                var namemap = {
+          #{lmapcode}
+                }
+                var k = namemap[name];
+                return k ? __m.__require(k) : __m.__builtin_require(name);
               }
-              var k = namemap[name];
-              return k ? __m.__require(k) : __m.__builtin_require(name);
-            }
-            if (__m.__builtin_require) require.resolve = __m.__builtin_require.resolve;
-            __m["#{unit.key}"].status = 'loading';
-        //******** begin #{unit.key} module: #{pkginfo} ************
-        #{unit.src}
-        //******** end #{unit.key} module: #{pkginfo}************
-            __m["#{unit.key}"].status = 'loaded';
-          }).bind(this)
-        };
+              if (__m.__builtin_require) require.resolve = __m.__builtin_require.resolve;
+              __m["#{unit.key}"].status = 'loading';
+          //******** begin #{unit.key} module: #{pkginfo} ************
 
-        """
+          """
+        if (unit.sm) then unit.sm.line = bigcat._lc(code)
+        code += src
+        code +=
+          """
+          //******** end #{unit.key} module: #{pkginfo}************
+              __m["#{unit.key}"].status = 'loaded';
+            }).bind(this)
+          };
+
+          """
     # seal the code
     if aslib
       code += "return {\n"
       packages = {}
       for unit in fileunits when unit.package
         if unit.package.name of packages
+          # key-ed by package name, therefore must resolve conficting version by appending version
+          # to package name for the name of the key
           oldunit = packages[unit.package.name]
           if (oldunit.package.version != unit.package.version)
             packages["#{oldunit.package.name}@#{oldunit.package.version}"] = oldunit
@@ -121,30 +156,51 @@ module.exports = bigcat = {
         """
     code +=
       """
-        }).call(this);
-        if (typeof module !== 'undefined') module.exports = this.#{moduleName};
+        }));
       """
-    [code, binunits]
+
+    [code, binaryUnits, bigcat.generateSourceMap(baseDir, code, fileunits)]
+
+  # see https://docs.google.com/document/d/1U1RGAehQwRypUTovF1KRlpiOFze0b-_2gc6fAH0KY0k/edit?pli=1#
+  # section "supporting post processing"
+  # baseDir:  the original src file location will be calculated relative to baseDir
+  generateSourceMap : (baseDir, code, units)->
+    sections = []
+    for unit in units when unit.sm
+      unitDir = path.dirname(unit.fpath)
+      # really should support http, https, etc...
+      url = path.resolve(unitDir, unit.sm.url)
+      sm = JSON.parse(fs.readFileSync(url))
+
+      for s,i in sm.sources
+        sp = path.resolve(unitDir, (sm.sourceRoot || '') + s)
+        sm.sources[i] = path.relative(baseDir, sp)
+      sections.push {
+        offset: {line : unit.sm.line, column : 0},
+        map : sm
+      }
+    return if sections.length == 0 then null else {
+      version : 3,
+      file : '',
+      sections
+    }
 
 
-  # make unique keys for each file units: a substring of file's full path
+  _lc : (str) ->
+    c = 0
+    for i in [0...str.length] when str[i] == '\n'
+      c++
+    c
+
+  # make terse unique keys for each file units: essentially just remove the common prefix from units.fpath
   makeKeys : (units)->
-    # the idea is fpath is always unqiue, so use the string after last "node_modules/" in fpath, if dup is found, then
-    # use string after second to last node_modules/, and so on until fpath is returned
-    nmpath = (fpath, c)->   # c: 1=>last node_modules/  2: second to last, ...
-      marker = 'node_modules/'
-      offset = fpath.length;
-      while offset != -1 and c-- > 0
-        offset = fpath.lastIndexOf(marker, offset-1)
-      return if offset == -1 then fpath else fpath.slice(offset + marker.length)
+    commonPrefix = (s1, s2) ->
+      for i in [0...Math.min(s1.length, s2.length)] when s1[i] != s2[i] then break
+      return if s1.length < s2.length then s1[0...i] else s2[0...i]
+    pfix = (units[1..].reduce ((pfix, unit) -> commonPrefix(pfix, unit.fpath)), units[0].fpath)
+    pfix = pfix.replace(/[^\/\\]*$/, '')  # trim trail non-path dividers
 
-    memory = {}
     for unit in units
-      key = ""; c = 1
-      while not key or key of memory then key = nmpath(unit.fpath, c++)
-      memory[key] = 1
-      unit.key = key
-
-
+      unit.key = unit.fpath[pfix.length..]
 
 };

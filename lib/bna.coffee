@@ -429,12 +429,15 @@ module.exports = bna = {
     return modules;
 
   # filepath:  path to the file to fuse
+  # outdir : the output dir, needed for sourcemap concat
+  # moduleName: name of main module, a global var of moduleName is created (for browser)
   # opts: { aslib: true|false }
-  # return [content, binaryUnits, warnigns]
+  # return [content, binaryUnits, warnings, units]
   # content: "fused" source code
   # binaryUnits: the binary units (.node files)
   # warnings: array of warnings: requires that are not processed
-  fuse : (filepath, opts)->
+  # units: array of all file units
+  fuse : (filepath, outdir, moduleName, opts)->
     opts ?= {}        # aslib: true|false
     filepath = path.resolve(filepath)
     unit = bna._parseFile(filepath, {}, opts.fakeCode)
@@ -443,22 +446,23 @@ module.exports = bna = {
     getreqs = (unit, cache)->
       if unit.fpath of cache then return cache[unit.fpath]
       cache[unit.fpath] = units = []
-
-      _(units).append( _(getreqs(child_unit, cache) for {node: node, unit: child_unit} in unit.requires).flatten() )
+      _(units).append(
+          _(getreqs(child_unit, cache) for {node: node, unit: child_unit} in unit.requires)
+            .flatten() )
       units.push(unit)
       units
 
     # get all dependencies including self (filepath), deduplicated
-    units = _(getreqs(unit,{})).unique (unit)->unit.fpath
+    units = getreqs(unit,{})
+    units = _(units).unique (unit)->unit.fpath
     warnings = _(unit.warnings for unit in units).flatten()
 
-    moduleName = bna.generateModuleName(filepath)
-    ret = (require("./fuse")).generate(moduleName, units, opts.aslib);
-    ret.push(warnings)
+    ret = (require("./fuse")).generate(outdir, moduleName, units, opts.aslib);
+    ret.push [warnings, units]...
     ret
 
   generateModuleName : (fullpath) ->
-    ret = path.basename(fullpath, ".js")
+    ret = path.basename(fullpath).replace(/\..*$/, '')
     if ret.toLowerCase() == "index" then ret = path.basename(path.dirname(fullpath))
     ret
 
@@ -476,12 +480,23 @@ module.exports = bna = {
   fuseTo : (filepath, dstdir, opts)->
     opts ?= {}
     filepath = path.resolve(filepath)
-    [content, binaryunits, warnings] = bna.fuse(filepath, opts)
+
+    moduleName = bna.generateModuleName(opts.dstfile or filepath)
+    [content, binaryunits, sourcemap, warnings, units] = bna.fuse(filepath, dstdir, moduleName, opts)
     bna.warn(warning) for warning in bna.prettyWarnings(warnings)
     wrench.mkdirSyncRecursive(dstdir);
     dstfile = path.resolve(dstdir, opts.dstfile or (path.basename(filepath,".js") + ".fused.js"))
+    smFile = dstfile + ".map"
+
     if opts.verbose then console.log("Generating #{path.relative('.', dstfile)}")
     fs.writeFileSync(dstfile, content);
+    if sourcemap
+      if opts.verbose then console.log("Generating #{path.relative('.', smFile)}")
+      sourcemap.file = path.basename(dstfile)
+      fs.writeFileSync(smFile, JSON.stringify(sourcemap, null, 2));
+      fs.appendFileSync(dstfile, "\n//# sourceMappingURL=#{path.basename(smFile)}")
+
+    # copy binary units
     for bunit in binaryunits
       dfile = path.resolve(dstdir, bunit.key)
       if fs.existsSync(dfile)
@@ -490,6 +505,7 @@ module.exports = bna = {
         if opts.verbose then console.log("Copying to #{dfile}")
         wrench.mkdirSyncRecursive(path.dirname(dfile))
         fs.createReadStream(bunit.fpath).pipe(fs.createWriteStream(dfile));
+    return units
 
   # read  dirpath non-recursively, fuse all found js or modules into dstdir
   # opts: aslib, verbose
@@ -535,11 +551,11 @@ module.exports = bna = {
         console.log("No files detected");
       else
         opts.fakeCode = fakeCode
-        bna.fuseTo(path.resolve(dirpath, "lib.js"), dstdir, opts)
-      if cb then cb();
+        units = bna.fuseTo(path.resolve(dirpath, "lib.js"), dstdir, opts)
+      if cb then cb(units);
     )
 
-        # helper: parse source code, analyze require, return results in a nested tree structure
+  # helper: parse source code, analyze require, return results in a nested tree structure
   # filepath: must be absolute path
   _parseFile : (filepath, cache, overrideContent)->
     if filepath of cache then return cache[filepath]
@@ -565,11 +581,15 @@ module.exports = bna = {
     # package member
     do ->
       detail = bna.identify(filepath)
+
       mainfiles = [path.join(detail.mpath, "index.js"), path.join(detail.mpath, "index.node")]
       if (detail.package)
         detail.package.name = detail.require  # ensure correct package name
         if detail.package.main
-          mainfiles.push(path.resolve(detail.mpath, detail.package.main))
+          main = path.resolve(detail.mpath, detail.package.main)
+          mainfiles.push(main)
+          # append .js .node variations as well
+          if (path.extname(main) == '') then mainfiles.push ["#{main}.js", "#{main}.node"]...
       if unit.fpath in mainfiles
         unit.package = detail.package or {name: detail.require, version: 'x'} # construct default package if no package.json
 

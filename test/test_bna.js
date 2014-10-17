@@ -154,8 +154,8 @@ module.exports["test fuse binary components"] = function(test) {
 
     //console.log(src);
     test.equal(fs.existsSync(path.join(fusedir, "usews.fused.js")) , true, "fused file");
-    test.equal(fs.existsSync(path.join(fusedir, "websocket/build/Release/xor.node")) , true, "binary 1");
-    test.equal(fs.existsSync(path.join(fusedir, "websocket/build/Release/validation.node")) , true, "binary 2");
+    test.equal(fs.existsSync(path.join(fusedir, "node_modules/websocket/build/Release/xor.node")) , true, "binary 1");
+    test.equal(fs.existsSync(path.join(fusedir, "node_modules/websocket/build/Release/validation.node")) , true, "binary 2");
     require("wrench").rmdirSyncRecursive(fusedir);
     test.done()
 };

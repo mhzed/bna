@@ -1,16 +1,16 @@
 # bna
 
-Abbreviation of "build node application".  It does a few things:
+Stands for "build node application".  It does a few things:
 
 * figure out npm package dependencies by scanning source code, for lazy people
 * copy package dependencies to local ./node_modules folder, once dependencies are figured out
 * code "fusion":  fancy word for generating a single js file by merging all of its dependencies together:
-    - no it's not simple code concatenation: generated js file runs without modification
+    - it's not simple code concatenation, 'require' will work.
     - circular require is supported, even in browser.
-    - bna knows about the binary modules (.node files): it will bundle them together with generated js and
-      everything should work seemlessly.
+    - sourcemap files will be properly fused as well. 
+    - bna tries to detect the binary modules (.node files): it will copy them to where the generated js is
     - yes it's kind of like [browserify](http://browserify.org), but
-        * fuse does not inject implementation of nodejs APIs, to run in browser
+        * fuse does not inject implementation of nodejs APIs for running in browser
         * though you can use "fuse" browser javascript files:  organize your code using module/require, and then
           fuse all code into a single file to be embedded in HTML.  But this is not the main goal for 'fuse'
     - fuse aims to transform your awesome nodejs app into a single js file, makes it easier to obfuscate/distribute 
@@ -85,55 +85,104 @@ After which you will see in proj1/
 Now you can just copy proj1/ folder to anywhere and it will run without dependency problems, in other words proj1/
 is now completely self-contained:  no need to run "npm install" on target machine.
 
-### proj2/ is ready for deployment to end user, and you don't really want to expose your code to the user
+### fuse use cases
 
-Do this:
+#### Create a single js file runnable
 
-    cd .../proj2/
-    bna -f -o ./fused/
 
-You will then see
-    proj2/
-        fused/
-            index.fused.js
-            ... binary modules if any
+    cd .../myprogram/
+    bna -f bin/myprogram.js 
+    Generated myprogram.fused.js
+    
+    node myprogram.fused.js
+    # is equivalent of
+    node bin/myprogram.js
+    
+    # then obfuscate/minify it
+    uglifyjs myprogram.fused.js -c -m > myprogram.fused.min.js
+    
+#### Develop for browser in coffee-script
 
-Now run your favorite JS obfuscater on fused/main.fused.js, tar ball fused/ folder and send it to user.  To
-launch your program just run command:
+So you are using coffee-script and require to develop javascript code to run inside browser, the
+folder structure is:
 
-    node fused/index.fused.js
+    www/
+      js/
+        widgets/
+          menu.coffee
+            menu.js
+            menu.js.map
+          status.coffee
+            status.js
+            status.js.map
+          dialog.coffee
+            dialog.js
+            dialog.js.map
+        app.coffee
+          app.js
+          app.js.map
+          
+app.coffee looks like this:
 
-### you have bunch of node_modules that you want to bundle together in a single file to be used in browser or another nodejs project
+    menu = require "./widgets/menu"
+    status = require "./widgets/status"
+    dialog = require "./widgets/dialog"
+    ...
+               
+Run command: 
 
-Say you put your browser code in a directory
+    bna -f app.js
+    Generated app.fused.js
+    Generated app.fused.js.map
+ 
+Embed app.fused.js in your html:
 
-    browser_lib/node_modules/
+    <script src="js/app.fused.js"></script>
+
+The locations in "app.fused.js" will all be properly mapped to their original coffee-script locations (verified
+in safari) in browser console.
+ 
+While in development, it's convenient to add file watchers for fuse:
+
+    bna -f app.js -w
+    
+When app.js or any of the dependencies change, fuse will re-run.
+
+#### Bundle bunch of node_modules together in a single file to be used in browser or another nodejs project
+
+So you got a folder that contains bunch of node modules
+
+    my_lib/
+      node_modules/
         a/
         b/
         c/
 
 Run
 
-    cd browser_lib
-    bna --fuselib ./ -o my.browser.lib.js
+    cd my_lib
+    bna --fuselib ./node_modules/ -o my_lib.js
 
 You will then have file
 
-    browser_lib/my.browser.lib.js
+    my_lib/my_lib.js
 
 And use it in nodejs:
 
-    var lib = require("browser_lib/my.browser.lib.js");
-    lib.browser_lib   // node_module browser_lib 
+    var lib = require("my_lib/my_lib.js"); 
     lib.a   // node_module a 
-    lib.b   // node_module a
+    lib.b   // node_module b
+    lib.c   // node_module c
 
 Or embed it in html for browser:
 
-    <script src="browser_lib/my.browser.lib.js"></script>
+    <script src="my_lib/my_lib.js"></script>
     <script type="text/javascript">
-    this.browser_lib.browser_lib;   // the main browser_lib
-    this.browser_lib.a;             // module a.
+    my_lib.a;             // module a
+    my_lib.b;             // module b
+    my_lib.c;             // module c
     </script>
+
+In browser, the global var 'my_lib' name is taken from path.basename of fuse output file name. 
 
 It goes without saying that if you want to use fused js file in browser, you must not require built-in node-modules.

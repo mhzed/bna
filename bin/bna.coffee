@@ -2,7 +2,7 @@
 
 optimist = require('optimist')
     .usage('Build modules and dependencies for app in current dir.\nUsage: -b -p -c -f file -o out/')
-    .boolean(['b','p','c', 'q'])
+    .boolean(['b','p','c', 'q', 'w'])
     .alias('b', 'build')
     .alias('p', 'packagejson')
     .alias('c', 'copy')
@@ -18,12 +18,14 @@ optimist = require('optimist')
     .describe('fuselib', 'fuse to a library to export modules, see doc.')
     .describe("o", 'specify output file or dir for fuse. Optional, default is ./')
     .describe("q", 'quite mode. No warnings')
+    .describe('w', 'watch file: fuse on change')
 ;
 argv =  optimist.argv;
 
 bna = require("../lib/bna");
 fs = require("fs");
 path = require("path");
+_ = require("under_score")
 
 if (!(argv.b || argv.p || argv.c || argv.f || argv.fuselib))
     console.log(optimist.help());
@@ -75,14 +77,21 @@ else if argv.f or argv.fuselib
   resolver    = require("resolve");
   ddir = "."
   if argv.f == true or argv.fuselib == true
-    fpath = bna.mainFile(path.resolve("."))
-    if not fpath
-      console.log "Nothing to fuse, are you in a module folder?  See help below\n"
-      console.log optimist.help()
-      process.exit(1)
-    console.log "Fusing detected file #{path.relative('.',fpath)}"
+    fpath = path.resolve(".")
   else
     fpath = path.resolve(argv.f || argv.fuselib)
+
+  if (fs.statSync(fpath).isDirectory())
+    mfile = bna.mainFile(fpath)
+    if argv.fuselib? and not mfile then # leave fpath, fuselib works on a non-module directory
+    else fpath = mfile    # fuse the main file
+
+  if not fpath
+    console.log "Nothing to fuse, are you in a module folder?  See help below\n"
+    console.log optimist.help()
+    process.exit(1)
+
+  console.log "Fusing file #{path.relative('.',fpath)}"
 
   if argv.o
     dstfile = null
@@ -91,11 +100,43 @@ else if argv.f or argv.fuselib
       dstfile = path.basename(ddir)
       ddir = path.dirname(ddir)
 
-  if (argv.fuselib? and fs.statSync(fpath).isDirectory())
-    bna.fuseDirTo(fpath, ddir, {verbose: true, aslib: true, dstfile: dstfile });
-  else
-    bna.fuseTo(fpath, ddir, {verbose: true, aslib: argv.fuselib?, dstfile: dstfile})
+  isDir = fs.statSync(fpath).isDirectory()
+  dofuse = (cb)=>
+    if (isDir)
+      bna.fuseDirTo(fpath, ddir, {verbose: true, aslib: argv.fuselib?, dstfile: dstfile }, cb);
+    else
+      process.nextTick ()=>
+        units = bna.fuseTo(fpath, ddir, {verbose: true, aslib: argv.fuselib?, dstfile: dstfile})
+        if (cb) then cb(units)
 
-  console.log("""
-  Finished
-  """)
+  if argv.w
+    do()=>  # create stack
+      onChange = do()=>
+        doChange = _.throttle( () =>
+          dofuse (units)=>watch(units)
+        , 5000, {leading: false})   # call fuse throttled at one per 5 seconds
+        return (e, fp)=>         # the change function
+          console.log "#{path.relative('.', fp)} changed"
+          doChange()
+
+      watch = do()=>  # file watchers are installed dynamically
+        watchers = {}
+        return (units)=>
+          newWatchers = {}
+          for unit in units
+            if unit.fpath of watchers
+              newWatchers[unit.fpath] = watchers[unit.fpath]
+              delete watchers[unit.fpath]
+            else do(unit)=>
+              console.log "Being watching #{path.relative('.', unit.fpath)}"
+              newWatchers[unit.fpath] = (fs.watch unit.fpath, (e)=> onChange(e, unit.fpath))
+          for fp,watcher of watchers
+            console.log "Stop watching  #{path.relative('.', fp)}"
+            watcher.close()
+          watchers = newWatchers
+
+      # the initial fuse, then start watching!
+      dofuse (units)=>
+        watch(units, onChange)
+  else
+    dofuse()
