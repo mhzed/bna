@@ -372,7 +372,7 @@ module.exports = bna = {
           else  # use semver to che ck
             oldVer = oldDep[name];
             if (!semver.satisfies(version, oldVer))
-              errList.push(_("%s: %s does not satisfy %s").format(name, version, oldVer));
+              errList.push(_("%s: actual version %s does not satisfy package.json's version %s").format(name, version, oldVer));
             else
               delete oldDep[name]
               newdep[name] = oldVer

@@ -109,12 +109,16 @@ else if argv.f or argv.fuselib
         units = bna.fuseTo(fpath, ddir, {verbose: true, aslib: argv.fuselib?, dstfile: dstfile})
         if (cb) then cb(units)
 
+
   if argv.w
+    # in case of spurious events, call fuse with 1 second delay/throttle
+    callFuseThrottleSec = if typeof argv.w == 'string' then parseInt(argv.w) else 2
+
     do()=>  # create stack
       onChange = do()=>
         doChange = _.throttle( () =>
           dofuse (units)=>watch(units)
-        , 5000, {leading: false})   # call fuse throttled at one per 5 seconds
+        , callFuseThrottleSec * 1000, {leading: true})   # call fuse throttled
         return (e, fp)=>         # the change function
           console.log "#{path.relative('.', fp)} changed"
           doChange()
@@ -128,11 +132,13 @@ else if argv.f or argv.fuselib
               newWatchers[unit.fpath] = watchers[unit.fpath]
               delete watchers[unit.fpath]
             else do(unit)=>
-              console.log "Being watching #{path.relative('.', unit.fpath)}"
-              newWatchers[unit.fpath] = (fs.watch unit.fpath, (e)=> onChange(e, unit.fpath))
+              console.log "Begin watching #{path.relative('.', unit.fpath)}"
+              #newWatchers[unit.fpath] = (fs.watch unit.fpath, (e)=> onChange(e, unit.fpath))
+              newWatchers[unit.fpath] = (fs.watchFile unit.fpath, (e)=> onChange(e, unit.fpath))
           for fp,watcher of watchers
             console.log "Stop watching  #{path.relative('.', fp)}"
-            watcher.close()
+            #watcher.close()
+            fs.unwatchFile fp
           watchers = newWatchers
 
       # the initial fuse, then start watching!
