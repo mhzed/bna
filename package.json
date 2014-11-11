@@ -1,6 +1,6 @@
 {
   "name": "bna",
-  "version": "1.0.2",
+  "version": "1.0.4",
   "description": "build node app",
   "main": "./lib/bna.js",
   "scripts": {

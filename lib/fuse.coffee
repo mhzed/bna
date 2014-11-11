@@ -40,7 +40,7 @@ module.exports = fuse = {
 
     sCoreRequires =
       ("""
-      __m["#{unit.key}"] = {
+      __m['#{unit.key}'] = {
         sts  : 1,
         mod  : {exports: __m.__sr('#{unit.key}')}
       };
@@ -53,7 +53,7 @@ module.exports = fuse = {
         (binName = '_' + binName) while binName in mem # ensure no dup
         unit.binName = binName
         sCoreRequires += """
-        __m["#{unit.key}"] = {
+        __m['#{unit.key}'] = {
           sts  : 1,
           mod  : {exports: __m.__sr('./#{binName}')}
         };
@@ -90,7 +90,7 @@ module.exports = fuse = {
 
       if path.extname(unit.fpath) == ".json"
         code += """
-          __m["#{unit.key}"] = {
+          __m['#{unit.key}'] = {
             sts: 1,
             mod: { exports:
           """
@@ -101,12 +101,12 @@ module.exports = fuse = {
         lmapcode = ("        '#{r.node.arguments[0].value}': '#{r.unit.key}'" for r in unit.requires).join(",\n")
         pkginfo = if unit.package then "#{unit.package.name}@#{unit.package.version or ''}" else ""
         code += """
-          __m["#{unit.key}"] = {
+          __m['#{unit.key}'] = {
             sts: null,
             mod: { #{if unit.package and includePackage then "package: #{JSON.stringify(unit.package)}," else ""}
               exports: {} },
             load: (function() {
-              var module = __m["#{unit.key}"].mod;
+              var module = __m['#{unit.key}'].mod;
               var exports = module.exports;
               var require = function(name) {
                 var namemap = {
@@ -116,14 +116,14 @@ module.exports = fuse = {
                 return k ? __m.__r(k) : __m.__sr(name);
               }
               require.resolve = __m.__sr.resolve;
-              __m["#{unit.key}"].sts = 0;
+              __m['#{unit.key}'].sts = 0;
           //******** begin #{unit.key} module: #{pkginfo} ************\n
           """
         if (unit.sm) then unit.sm.line = fuse._lc(code) # keep track of line for sourcemap
         code += src
         code += """
           //******** end #{unit.key} module: #{pkginfo}************
-              __m["#{unit.key}"].sts = 1;
+              __m['#{unit.key}'].sts = 1;
             }).bind(this)
           };\n
           """
@@ -206,6 +206,6 @@ module.exports = fuse = {
     pfix = pfix.replace(/[^\/\\]*$/, '')  # trim trail non-path dividers
 
     for unit in units
-      unit.key = unit.fpath[pfix.length..]
+      unit.key = unit.fpath[pfix.length..].replace(/\\/g, '/')
 
 };
