@@ -86,8 +86,8 @@ module.exports["test writePackageJson"] = function(test) {
             pkgjson.dependencies.b = "1.x";
             fs.writeFileSync(p2pkgfile, JSON.stringify(pkgjson, null, 2), 'utf8');
             bna.writePackageJson(p2dir, function(err) {
-                test.equal(err && /a: 0\.0\.1 does not/.test(err.toString()), true, "a error");
-                test.equal(err && /b: 0\.0\.1 does not/.test(err.toString()), true, "b error");
+                test.equal(err && /a:.* 0\.0\.1 does not/.test(err.toString()), true, "a error");
+                test.equal(err && /b:.* 0\.0\.1 does not/.test(err.toString()), true, "b error");
                 cb();
             });
         },
@@ -154,8 +154,8 @@ module.exports["test fuse binary components"] = function(test) {
 
     //console.log(src);
     test.equal(fs.existsSync(path.join(fusedir, "usews.fused.js")) , true, "fused file");
-    test.equal(fs.existsSync(path.join(fusedir, "node_modules/websocket/build/Release/xor.node")) , true, "binary 1");
-    test.equal(fs.existsSync(path.join(fusedir, "node_modules/websocket/build/Release/validation.node")) , true, "binary 2");
+    test.equal(fs.existsSync(path.join(fusedir, "xor.node")) , true, "binary 1");
+    test.equal(fs.existsSync(path.join(fusedir, "validation.node")) , true, "binary 2");
     require("wrench").rmdirSyncRecursive(fusedir);
     test.done()
 };

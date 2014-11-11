@@ -30,10 +30,10 @@ module.exports = fuse = {
   generate : (baseDir, moduleName, units, asLib, includePackage)->
     coreUnits = (unit for unit in units when unit.isCore)
     binaryUnits = (unit for unit in units when unit.isBinary)
-    fileUnits = (unit for unit in units when not (unit.isCore)) # includes binaryUnits
+    fileUnits = (unit for unit in units when not unit.isCore and not unit.isBinary)
 
     # for non core untis, figure out a unique key in __m
-    fuse.makeKeys(fileUnits);
+    fuse.makeKeys(fileUnits.concat(binaryUnits));
     unit.key = unit.fpath for unit in coreUnits # core units: key = fpath
 
     # store the core modules (aka nodejs modules) in the global module map
@@ -44,7 +44,20 @@ module.exports = fuse = {
         sts  : 1,
         mod  : {exports: __m.__sr('#{unit.key}')}
       };
-      """ for unit in coreUnits.concat(binaryUnits)).join('\n')
+      """ for unit in coreUnits).join('\n')
+
+    do=>
+      mem = {}
+      for unit in binaryUnits
+        binName = path.basename(unit.fpath)
+        (binName = '_' + binName) while binName in mem # ensure no dup
+        unit.binName = binName
+        sCoreRequires += """
+        __m["#{unit.key}"] = {
+          sts  : 1,
+          mod  : {exports: __m.__sr('./#{binName}')}
+        };
+        """
 
     code = """
       (function(run, root) {
@@ -63,6 +76,7 @@ module.exports = fuse = {
       };
       #{sCoreRequires}
       """
+
     # [_\w\-\.\~], see RFC3986, section 2.3.
     smRegex = /\/\/# sourceMappingURL=([_\w\-\.\~]+)/
     for unit,i in fileUnits
@@ -146,7 +160,11 @@ module.exports = fuse = {
       unitDir = path.dirname(unit.fpath)
       # really should support http, https, etc...
       url = path.resolve(unitDir, unit.sm.url)
-      sm = JSON.parse(fs.readFileSync(url))
+      try
+        sm = JSON.parse(fs.readFileSync(url))
+      catch e
+        console.log "Invalid source map file #{path.relative(baseDir,url)}, skipping source map generating"
+        return null
 
       # if sm itself consists of concatenated sections, merge them
       if (sm.sections)

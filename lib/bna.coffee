@@ -498,7 +498,7 @@ module.exports = bna = {
 
     # copy binary units
     for bunit in binaryunits
-      dfile = path.resolve(dstdir, bunit.key)
+      dfile = path.resolve(dstdir, bunit.binName)
       if fs.existsSync(dfile)
         console.log("Skipped copying #{dfile}, already exists.")
       else
