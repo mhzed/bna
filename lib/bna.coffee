@@ -6,12 +6,13 @@ _           = require("under_score");
 esprima     = require('esprima');
 ast         = require("./ast");
 wrench      = require("wrench");
+require("colors")
 
 module.exports = bna = {
   quiet  : false,
 
   warn  : (msg)->
-    if not bna.quiet then console.log msg
+    if not bna.quiet then console.log msg.gray
 
   _cache : {},    # dep.path => { dep object }
 
@@ -35,15 +36,15 @@ module.exports = bna = {
       isSysModule : ()-> return this.path == this.require  # if a system module like 'path' or 'fs'
     };
 
+    # if file is a path location, then find module path containg file
     ret.mpath = if /\/|\\/.test(file) then bna.findModulePath(file) else file;
-    if (ret.mpath == file)    # in case of node_modules/mylib.js
+    if (ret.mpath == file)
       ret.require = path.basename(ret.mpath).replace(/\.(js|node)$/i, '');
     else
       ret.require = path.basename(ret.mpath);
       packageJsonFile = path.join(ret.mpath, "package.json");
       if (fs.existsSync(packageJsonFile))
         ret.package = JSON.parse(fs.readFileSync(packageJsonFile));
-
     return ret
   ,
 
@@ -54,7 +55,8 @@ module.exports = bna = {
     packageJsonFile = path.join(parentpath, "package.json");
     if (fs.existsSync(packageJsonFile)) then return parentpath;
     else if (path.basename(parentpath) == "node_modules") then return fullpath;
-    else if (['index.js', 'index.node'].indexOf(path.basename(fullpath).toLowerCase()) != -1 ) then return parentpath;
+    # remove identifying pure path/index.js as a module, module must contain package.json
+#    else if (['index.js', 'index.node'].indexOf(path.basename(fullpath).toLowerCase()) != -1 ) then return parentpath;
     else return bna.findModulePath(parentpath);
 
   mainFile : (mpath)->
@@ -95,14 +97,15 @@ module.exports = bna = {
         allrequires = bna.findRequire(file);
         if allrequires.expressions.length > 0  # complex requires are ignored, thus print warnings
           expressions = bna.findRequire(file, {loc: true}).expressions
+          pl = (p)->path.relative(process.cwd(), p)
           for [expr,loc] in expressions
-            bna.warn "Warning: ignored require expression at #{loc.file}:#{loc.start.line}"
+            bna.warn "Warning: dynamic require detected at #{pl(loc.file)}:#{loc.start.line}"
 
         requires = (name for [name,loc] in allrequires.strings); # find all requires where argument is string!
         async.map(# resolve required items to actual file path
           requires,
           (require_item, cb) ->    # resolve required item from file's basedir
-            resolver(require_item, { extensions: [".js", ".node"], basedir: path.dirname(path.resolve(file)) }, (err, resolved) ->
+            resolver(require_item, { extensions: [".js", ".node", ".json"], basedir: path.dirname(path.resolve(file)) }, (err, resolved) ->
               if (err) then cb(null, null);    # suppress resolve error
               else cb(null, resolved);
             );
@@ -343,7 +346,7 @@ module.exports = bna = {
    * of main module. The merge rules are:
    * 1. if not exist yet, dependency is added
    * 2. otherwise, do not modify current package.json
-        a. however if detected dependency exits in current pakcage.json, then check if versions are compatible,
+        a. however if detected dependency exits in current package.json, then check if versions are compatible,
    *
    * @param mpath     path to a dir or file (the file must be main entry point of module, i.e. returned by require.resolve
    * @param cb(err, [] )  [] is removed packages
@@ -369,9 +372,13 @@ module.exports = bna = {
             errList.push(_("%s is not versioned!").format(name));
           else if (!(name of oldDep))
             newdep[name] = version;
-          else  # use semver to che ck
+          else  # use semver to check
             oldVer = oldDep[name];
-            if (!semver.satisfies(version, oldVer))
+            if /:\/\//.test(oldVer) # test for url pattern
+              console.log _("Package %s is ignored due to non-semver %s").format(name, oldVer);
+              delete oldDep[name]
+              newdep[name] = oldVer   # keep old value
+            else if (!semver.satisfies(version, oldVer))
               errList.push(_("%s: actual version %s does not satisfy package.json's version %s").format(name, version, oldVer));
             else
               delete oldDep[name]
@@ -403,8 +410,9 @@ module.exports = bna = {
     src = src.replace(/^#![^\n]*\n/, ''); # remove #! shell marker
 
     modules = { strings : [], expressions : [] };
-    # fast test for 'require'
-    if (src.indexOf('require') == -1 or /\.json$/i.test(filepath) ) then return modules;
+    # if .json, .node, or no 'require' keyword found, then return
+    if (src.indexOf('require') == -1 or /\.json$/i.test(filepath) or
+        /\.node$/i.test(filepath) ) then return modules;
 
     try
       src_ast = esprima.parse(src, opt)
@@ -457,7 +465,13 @@ module.exports = bna = {
     units = _(units).unique (unit)->unit.fpath
     warnings = _(unit.warnings for unit in units).flatten()
 
-    ret = (require("./fuse")).generate(outdir, moduleName, units, opts.aslib);
+    ret = (require("./fuse")).generate({
+      baseDir : outdir
+      moduleName,
+      units,
+      asLib: opts.aslib,
+      verbose : !bna.quiet
+    });
     ret.push [warnings, units]...
     ret
 
@@ -469,14 +483,18 @@ module.exports = bna = {
   # helper to turn warnings returned by "fuse" into human readable messages
   prettyWarnings : (warnings) ->
     msgs = {
-      'nonconst': 'require ignored because parameter is not a constant string'
+      'nonconst': 'require dynamic modules: '
       'resolve' : 'require ignored because parameter can not be resolved'
+      'dynamicResolveError' : 'dynamic required module resolve error'
     }
-    "#{path.relative('.',node.loc.fpath)}:#{node.loc.start.line}: #{msgs[reason]}" \
-      for {node: node, reason: reason} in warnings
+    pl = (l)-> if l then l else ''
+    pe = (e)-> if e then ', ' + e else ''
+    m = (dynamicModules)-> if dynamicModules then JSON.stringify(dynamicModules) else ''
+    "#{path.relative('.',node.loc.fpath)}:#{pl(node.loc.start.line)}: #{msgs[reason]}#{pe(error)} #{m(dynamicModules)}" \
+      for {node, reason, error, dynamicModules} in warnings
 
   # fuse filepath, write output to directory dstdir, using opts
-  # opts: aslib: true|false,  verbose: true|false
+  # opts: aslib: true|false
   fuseTo : (filepath, dstdir, opts)->
     opts ?= {}
     filepath = path.resolve(filepath)
@@ -488,10 +506,10 @@ module.exports = bna = {
     dstfile = path.resolve(dstdir, opts.dstfile or (path.basename(filepath,".js") + ".fused.js"))
     smFile = dstfile + ".map"
 
-    if opts.verbose then console.log("Generating #{path.relative('.', dstfile)}")
+    console.log("Generating #{path.relative('.', dstfile)}")
     fs.writeFileSync(dstfile, content);
     if sourcemap
-      if opts.verbose then console.log("Generating #{path.relative('.', smFile)}")
+      console.log("Generating #{path.relative('.', smFile)}")
       sourcemap.file = path.basename(dstfile)
       fs.writeFileSync(smFile, JSON.stringify(sourcemap, null, 2));
       fs.appendFileSync(dstfile, "\n//# sourceMappingURL=#{path.basename(smFile)}")
@@ -500,15 +518,15 @@ module.exports = bna = {
     for bunit in binaryunits
       dfile = path.resolve(dstdir, bunit.binName)
       if fs.existsSync(dfile)
-        console.log("Skipped copying #{dfile}, already exists.")
+        bna.warn("Skipped copying #{dfile}, already exists.")
       else
-        if opts.verbose then console.log("Copying to #{dfile}")
+        bna.warn("Copying to #{dfile}")
         wrench.mkdirSyncRecursive(path.dirname(dfile))
         fs.createReadStream(bunit.fpath).pipe(fs.createWriteStream(dfile));
     return units
 
   # read  dirpath non-recursively, fuse all found js or modules into dstdir
-  # opts: aslib, verbose
+  # opts: aslib
   fuseDirTo : (dirpath, dstdir, opts, cb)->
     fakeCode = ""
     scandir = (curdir, cb) ->
@@ -555,6 +573,31 @@ module.exports = bna = {
       if cb then cb(units);
     )
 
+  # filepath: file to analyze dependency for
+  # returns: [dependency, warnings]
+  # dependency is an object, key: package name, val: version
+  # warnings is an array of string
+  fileDep : (filepath)->
+    filepath = path.resolve(filepath)
+    unit = bna._parseFile(filepath, {})
+    getreqs = (unit, cache)->
+      if unit.fpath of cache then return cache[unit.fpath]
+      cache[unit.fpath] = units = []
+      _(units).append(
+          _(getreqs(child_unit, cache) for {node: node, unit: child_unit} in unit.requires)
+          .flatten() )
+      units.push(unit)
+      units
+
+    # get all dependencies including self (filepath), deduplicated
+    units = getreqs(unit,{})
+    units = _(units).unique (unit)->unit.fpath
+    warnings = _(unit.warnings for unit in units).flatten()
+    ret = {}
+    for u in units when u.package
+      ret[u.package.name] = u.package.version
+    [ret, warnings]
+
   # helper: parse source code, analyze require, return results in a nested tree structure
   # filepath: must be absolute path
   _parseFile : (filepath, cache, overrideContent)->
@@ -566,7 +609,7 @@ module.exports = bna = {
       isBinary : isBinary,  # binary modules, ".node" extension
       fpath : filepath,
       src   : "",
-      requires : [],   # array of required modules, as object {node, unit}
+      requires : [],   # array of dependencies
       warnings : [],
       # if set, then this file is the "main" file of a node module, as defined by nodejs
       package : undefined,
@@ -594,38 +637,66 @@ module.exports = bna = {
         unit.package = detail.package or {name: detail.require, version: 'x'} # construct default package if no package.json
 
     # do first pass without parsing location info (makes parsing 3x slower), if bad require is detected,
-    # then we do another pass with localtion info, for user-friendly warnings
+    # then we do another pass with location info, for user-friendly warnings
     bad_require_detected = false
+    dynamic_require_detected = false
     try
       code = esprima.parse(unit.src, {loc: false})
     catch e
       console.log ("Ignoring #{filepath}, esprima failed to parse due to: #{e}")
       return unit
-
+    # 1st pass, traverse ast tree, resolve all const-string requires if possible
     ast.traverse(code, [ast.isRequire], (node)->
-      #node.loc.fpath = filepath
       arg = node.arguments[0]
       if arg and arg.type == 'Literal'  # require a string
         modulename = arg.value
+
+        e = undefined
         try
           fullpath = resolver.sync(modulename, {
-            extensions: ['.js', '.node'],
+            extensions: ['.js', '.node', '.json'],
             basedir: path.dirname(filepath)
           });
         catch e
           bad_require_detected = true;
 
-        if not e  # only if resolved ok
+        if not e
           runit = bna._parseFile(fullpath, cache)
-
           unit.requires.push
             node: node,   # node.arguments[0].value is the require name
             unit: runit
       else
-        bad_require_detected = true
+        dynamic_require_detected = true
     )
 
-    if bad_require_detected
+    dynamicModules = []
+    if dynamic_require_detected then do=>
+      dynamicModules = bna.detectDynamicRequires(unit)
+      for modulename in dynamicModules
+        e = undefined
+        try
+          fullpath = resolver.sync(modulename, {
+            extensions: ['.js', '.node', '.json'],
+            basedir: path.dirname(filepath)
+          });
+        catch e
+          unit.warnings.push
+            node: {loc: {fpath: fullpath, start:{line:null}}, arguments: [{'value': modulename}] },
+            reason: "resolve"
+
+        if not e  # only if resolved ok
+          # fake node in ast
+          if (r for r in unit.requires when r.unit.fpath == fullpath).length == 0
+            node = {loc: {fpath: fullpath, start:{line:null}}, arguments: [{'value': modulename}] }
+            runit = bna._parseFile(fullpath, cache)
+            unit.requires.push {
+              node
+              unit: runit
+            }
+
+    if bad_require_detected or dynamic_require_detected
+      # 2nd pass, if bad 'require' is detected, re-parse file with location info so that
+      # bad require's locations are captured
       code = esprima.parse(unit.src, {loc: true})
       ast.traverse(code, [ast.isRequire], (node)->
         node.loc.fpath = filepath
@@ -634,7 +705,7 @@ module.exports = bna = {
           modulename = arg.value
           try
             resolver.sync(modulename, {
-              extensions: ['.js', '.node'],
+              extensions: ['.js', '.node', ".json"],
               basedir: path.dirname(filepath)
             });
           catch e
@@ -645,9 +716,41 @@ module.exports = bna = {
           unit.warnings.push
             node: node,
             reason: "nonconst"
+            dynamicModules: dynamicModules
       )
+
     return unit;
   ,
+
+  # the trick to detect dynamicRequire, is to run the code with a spy 'require' which captures
+  # there parameters....  this works in 90%+ scenarios
+  # perhaps the better way is to launch an external node process, run code with spy require, and
+  # capture the modules, this covers more scenarios, but is more costly...
+  detectDynamicRequires : (unit)->
+    dmodules = []
+    src = """
+    (function() {
+    var exports = {}
+    var module = { "exports": exports }
+    var __filename = "#{unit.fpath}"
+    var __dirname = "#{path.dirname(unit.fpath)}"
+    var require = function(module) {
+      dmodules.push(module)
+      return function(){}   // require("blah").x.x  will still fail, but what can u do?!
+    };
+    #{unit.src}
+    })()
+    """
+    try
+      eval src
+    catch e
+      unit.warnings.push
+        node: {loc: {fpath: unit.fpath, start:{line:null}}, arguments: [{'value':''}] }
+        reason: 'dynamicResolveError'
+        error : e
+    ret = _.unique(dmodules)
+    ret
+
 
 
 }

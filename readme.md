@@ -9,13 +9,9 @@ Stands for "build node application".  It does a few things:
     - circular require is supported, even in browser.
     - sourcemap files will be properly fused as well. 
     - bna tries to detect the binary modules (.node files): it will copy them to where the generated js is
-    - yes it's kind of like [browserify](http://browserify.org), but
-        * fuse does not inject implementation of nodejs APIs for running in browser
-        * though you can use "fuse" browser javascript files:  organize your code using module/require, and then
-          fuse all code into a single file to be embedded in HTML.  But this is not the main goal for 'fuse'
-    - fuse aims to transform your awesome nodejs app into a single js file, makes it easier to obfuscate/distribute 
-      your code.
-
+    - yes it's kind of like a simpler version of [browserify](http://browserify.org)
+    - fuse-able code must require constant string package names, dynamic require will be ignored 
+      (but spits warnings)
 
 ## Installation
 

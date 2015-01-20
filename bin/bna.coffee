@@ -1,7 +1,7 @@
 #!/usr/bin/env coffee
 
 optimist = require('optimist')
-    .usage('Build modules and dependencies for app in current dir.\nUsage: -b -p -c -f file -o out/')
+    .usage('Build modules and dependencies for app in the current dir.\nUsage: -b -p -c -f file -o out/')
     .boolean(['b','p','c', 'q', 'w'])
     .alias('b', 'build')
     .alias('p', 'packagejson')
@@ -20,36 +20,49 @@ optimist = require('optimist')
     .describe("q", 'quite mode. No warnings')
     .describe('w', 'watch file: fuse on change')
 ;
-argv =  optimist.argv;
-
+argv = optimist.argv
 bna = require("../lib/bna");
 fs = require("fs");
 path = require("path");
 _ = require("under_score")
 
-if (!(argv.b || argv.p || argv.c || argv.f || argv.fuselib))
-    console.log(optimist.help());
-    if (fs.existsSync(path.join(process.cwd(), "package.json")))
-        bna.dir.npmDependencies(process.cwd(), (err, deps)->
-            if (err) then console.log(err);
-            else
-                console.log("Module dependencies are:")
-                console.log(deps);
-            bna.dir.externDependModules(process.cwd(), (err, deps)->
-                if (err) then console.log(err);
-                else
-                    console.log("Extern modules (node_modules located outside of current dir):")
-                    console.log(deps.slice(1));
-            )
-        )
-
 if argv.quiet then bna.quiet = true
 
-if (argv.p)
+if (!(argv.b || argv.p || argv.c || argv.f || argv.fuselib))
+
+  [targetPath] = argv._
+  if not targetPath
+    console.log(optimist.help());
+    if (fs.existsSync(path.join(process.cwd(), "package.json")))
+      targetPath = process.cwd()
+  else
+    targetPath = path.resolve(targetPath)
+  if (targetPath and fs.existsSync(targetPath))
+    if fs.lstatSync(targetPath).isDirectory()
+      console.log("Analyzing directory...")
+      bna.dir.npmDependencies(targetPath, (err, deps)->
+          if (err) then console.log(err);
+          else
+              console.log("Module dependencies are:")
+              console.log(deps);
+          bna.dir.externDependModules(targetPath, (err, deps)->
+              if (err) then console.log(err);
+              else
+                  console.log("Extern modules (node_modules located outside of current dir):")
+                  console.log(deps.slice(1));
+          )
+      )
+    else
+      console.log("Analyzing file...")
+      deps = ("#{k}@#{v}" for k,v of bna.fileDep(targetPath)[0])
+      console.log("Dependencies are:")
+      console.log deps.sort()
+
+else if (argv.p)
     bna.writePackageJson(process.cwd(), (err, removedPackages)->
         if (err) then console.log(err.stack);
         else
-          if removedPackages.length then console.log("Removd unused packages: " + removedPackages);
+          if removedPackages.length then console.log("Removed unused packages: " + removedPackages);
           console.log("package.json dependencies updated");
     )
 else if (argv.c)
@@ -103,17 +116,16 @@ else if argv.f or argv.fuselib
   isDir = fs.statSync(fpath).isDirectory()
   dofuse = (cb)=>
     if (isDir)
-      bna.fuseDirTo(fpath, ddir, {verbose: true, aslib: argv.fuselib?, dstfile: dstfile }, cb);
+      bna.fuseDirTo(fpath, ddir, {aslib: argv.fuselib?, dstfile: dstfile }, cb);
     else
       process.nextTick ()=>
-        units = bna.fuseTo(fpath, ddir, {verbose: true, aslib: argv.fuselib?, dstfile: dstfile})
+        units = bna.fuseTo(fpath, ddir, {aslib: argv.fuselib?, dstfile: dstfile})
         if (cb) then cb(units)
 
 
   if argv.w
     # in case of spurious events, call fuse with 1 second delay/throttle
     callFuseThrottleSec = if typeof argv.w == 'string' then parseInt(argv.w) else 2
-
     do()=>  # create stack
       onChange = do()=>
         doChange = _.throttle( () =>

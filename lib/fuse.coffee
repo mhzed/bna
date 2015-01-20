@@ -27,13 +27,13 @@ module.exports = fuse = {
   #              copy from <unit.fpath> to <dst_dir>/<unit.key> for unit in binaryUnits
   # sourceMap:  source map content string
 
-  generate : (baseDir, moduleName, units, asLib, includePackage)->
+  generate : ({baseDir, moduleName, units, asLib, includePackage, verbose})->
     coreUnits = (unit for unit in units when unit.isCore)
     binaryUnits = (unit for unit in units when unit.isBinary)
     fileUnits = (unit for unit in units when not unit.isCore and not unit.isBinary)
 
     # for non core untis, figure out a unique key in __m
-    fuse.makeKeys(fileUnits.concat(binaryUnits));
+    fuse._makeKeys(fileUnits.concat(binaryUnits));
     unit.key = unit.fpath for unit in coreUnits # core units: key = fpath
 
     # store the core modules (aka nodejs modules) in the global module map
@@ -54,8 +54,9 @@ module.exports = fuse = {
         unit.binName = binName
         sCoreRequires += """
         __m['#{unit.key}'] = {
-          sts  : 1,
-          mod  : {exports: __m.__sr('./#{binName}')}
+          sts  : null,
+          mod  : {exports: {}},
+          load : function() { return (__m['#{unit.key}'].mod.exports = __m.__sr('./#{binName}')); }
         };
         """
 
@@ -100,6 +101,7 @@ module.exports = fuse = {
       else
         lmapcode = ("        '#{r.node.arguments[0].value}': '#{r.unit.key}'" for r in unit.requires).join(",\n")
         pkginfo = if unit.package then "#{unit.package.name}@#{unit.package.version or ''}" else ""
+        pkginfo += "(#{path.basename(unit.fpath)})"
         code += """
           __m['#{unit.key}'] = {
             sts: null,
@@ -117,12 +119,12 @@ module.exports = fuse = {
               }
               require.resolve = __m.__sr.resolve;
               __m['#{unit.key}'].sts = 0;
-          //******** begin #{unit.key} module: #{pkginfo} ************\n
+          //******** begin file #{pkginfo} ************\n
           """
         if (unit.sm) then unit.sm.line = fuse._lc(code) # keep track of line for sourcemap
         code += src
         code += """
-          //******** end #{unit.key} module: #{pkginfo}************
+          //******** end file #{pkginfo}************
               __m['#{unit.key}'].sts = 1;
             }).bind(this)
           };\n
@@ -149,12 +151,12 @@ module.exports = fuse = {
       code += "\nreturn __m.__r('#{_(fileUnits).last().key}');\n";
     code += "\n},this));"
 
-    [code, binaryUnits, fuse.generateSourceMap(baseDir, code, fileUnits)]
+    [code, binaryUnits, fuse._generateSourceMap(baseDir, code, fileUnits, verbose)]
 
   # see https://docs.google.com/document/d/1U1RGAehQwRypUTovF1KRlpiOFze0b-_2gc6fAH0KY0k/edit?pli=1#
   # section "supporting post processing"
   # baseDir:  the original src file location will be calculated relative to baseDir
-  generateSourceMap : (baseDir, code, units)->
+  _generateSourceMap : (baseDir, code, units, verbose)->
     sections = []
     for unit in units when unit.sm
       unitDir = path.dirname(unit.fpath)
@@ -163,8 +165,8 @@ module.exports = fuse = {
       try
         sm = JSON.parse(fs.readFileSync(url))
       catch e
-        console.log "Invalid source map file #{path.relative(baseDir,url)}, skipping source map generating"
-        return null
+        if verbose then console.log "Skipped invalid source map file #{path.relative(baseDir,url)}"
+        continue
 
       # if sm itself consists of concatenated sections, merge them
       if (sm.sections)
@@ -197,15 +199,24 @@ module.exports = fuse = {
       c++
     c
 
-  # make terse unique keys for each file units: essentially just remove the common prefix from units.fpath
-  makeKeys : (units)->
+  _makeKeys : (units)->
+    # make unique key from i (offset in array)
+    c = (i)->
+      (i%26 for x in [0..Math.floor(i/26)]).reduce(
+        (r,j)->r+String.fromCharCode('a'.charCodeAt(0)+j)
+      , '')
+    for unit,i in units
+      unit.key = c(i)
+
+  _makeSensibleKeys : (units)->
+    # make terse unique keys for each file units: essentially just remove the common prefix from units.fpath
     commonPrefix = (s1, s2) ->
       for i in [0...Math.min(s1.length, s2.length)] when s1[i] != s2[i] then break
       return if s1.length < s2.length then s1[0...i] else s2[0...i]
     pfix = (units[1..].reduce ((pfix, unit) -> commonPrefix(pfix, unit.fpath)), units[0].fpath)
-    pfix = pfix.replace(/[^\/\\]*$/, '')  # trim trail non-path dividers
-
+    pfix = pfix.replace(/[^\/\\]*$/, '')  # trim trail non-path dividefix
     for unit in units
       unit.key = unit.fpath[pfix.length..].replace(/\\/g, '/')
+
 
 };
