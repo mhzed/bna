@@ -438,8 +438,8 @@ module.exports = bna = {
 
   # filepath:  path to the file to fuse
   # outdir : the output dir, needed for sourcemap concat
-  # moduleName: name of main module, a global var of moduleName is created (for browser)
-  # opts: { aslib: true|false }
+  # moduleName: name of main module, a global var of moduleName is created (for browser), set '' to not create
+  # opts: { aslib: true|false, prependCode: "var x = require('x');" }
   # return [content, binaryUnits, warnings, units]
   # content: "fused" source code
   # binaryUnits: the binary units (.node files)
@@ -470,6 +470,7 @@ module.exports = bna = {
       units,
       asLib: opts.aslib,
       verbose : !bna.quiet
+      prependCode : opts.prependCode or ''
     });
     ret.push [warnings, units]...
     ret

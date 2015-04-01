@@ -27,7 +27,7 @@ module.exports = fuse = {
   #              copy from <unit.fpath> to <dst_dir>/<unit.key> for unit in binaryUnits
   # sourceMap:  source map content string
 
-  generate : ({baseDir, moduleName, units, asLib, includePackage, verbose})->
+  generate : ({baseDir, moduleName, units, asLib, includePackage, verbose, prependCode})->
     coreUnits = (unit for unit in units when unit.isCore)
     binaryUnits = (unit for unit in units when unit.isBinary)
     fileUnits = (unit for unit in units when not unit.isCore and not unit.isBinary)
@@ -61,6 +61,7 @@ module.exports = fuse = {
         """
 
     code = """
+      #{prependCode}
       (function(run, root) {
         var ret = run.bind(root)();
         if ('#{moduleName}') root['#{moduleName}'] = ret;
