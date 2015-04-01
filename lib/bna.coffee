@@ -454,9 +454,8 @@ module.exports = bna = {
     getreqs = (unit, cache)->
       if unit.fpath of cache then return cache[unit.fpath]
       cache[unit.fpath] = units = []
-      _(units).append(
-          _(getreqs(child_unit, cache) for {node: node, unit: child_unit} in unit.requires)
-            .flatten() )
+      deps = _(getreqs(child_unit, cache) for {node: node, unit: child_unit} in unit.requires).flatten()
+      (units.push d) for d in deps
       units.push(unit)
       units
 
