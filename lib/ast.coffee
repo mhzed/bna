@@ -1,4 +1,5 @@
-_ = require "under_score"
+_ = require("underscore")
+
 
 # esprima ast manipulation helpers,
 

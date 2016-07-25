@@ -11,7 +11,8 @@
 ###
 path = require "path"
 fs   = require "fs"
-_    = require "under_score"
+_ = require("underscore")
+
 
 module.exports = fuse = {
 

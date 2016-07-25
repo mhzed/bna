@@ -2,14 +2,26 @@ fs          = require("fs");
 resolver    = require("resolve");
 async       = require("async");
 path        = require("path");
-_           = require("under_score");
-esprima     = require('esprima');
+_ = require("underscore")
+acorn       = require("acorn");
 ast         = require("./ast");
 wrench      = require("wrench");
 require("colors")
 
+
+jsParse = (src, opt)=>
+  acorn.parse(src, _.extend(opt || {}, {
+    ecmaVersion : 6,
+    allowImportExportEverywhere: true,
+    allowHashBang: true,
+    allowReturnOutsideFunction: true,
+    locations : bna.locations
+  }));
+
+
 module.exports = bna = {
   quiet  : false,
+  locations : false,    # where to ask parser to save line locations
 
   warn  : (msg)->
     if not bna.quiet then console.log msg.gray
@@ -96,10 +108,9 @@ module.exports = bna = {
       (cb) ->
         allrequires = bna.findRequire(file);
         if allrequires.expressions.length > 0  # complex requires are ignored, thus print warnings
-          expressions = bna.findRequire(file, {loc: true}).expressions
           pl = (p)->path.relative(process.cwd(), p)
-          for [expr,loc] in expressions
-            bna.warn "Warning: dynamic require detected at #{pl(loc.file)}:#{loc.start.line}"
+          for [expr,loc] in allrequires.expressions
+            bna.warn "Warning: dynamic require detected at #{pl(loc.file)}:#{loc.line}"
 
         requires = (name for [name,loc] in allrequires.strings); # find all requires where argument is string!
         async.map(# resolve required items to actual file path
@@ -144,7 +155,7 @@ module.exports = bna = {
       if (!detail.deps) then return detail;
       deps = _(detail.deps).reduce((memo, dep) ->
         if (detail.mpath == dep.mpath)     # same package!
-          if (dep.deps != undefined) then _(memo).append(dep.deps);
+          if (dep.deps != undefined) then memo = _(memo).concat(dep.deps);
         else memo.push(dep);
         return memo;
       , []);
@@ -290,7 +301,7 @@ module.exports = bna = {
         (file, isDir, cb)->
           f = if isDir then bna.dir.externDependModules else bna.externDependModules;
           f(file, (err, deps)->
-            _(alldeps).append(deps);
+            alldeps = _(alldeps).concat(deps);
             cb(err);
           )
         ,
@@ -304,7 +315,7 @@ module.exports = bna = {
             )
           .value();
           # keep the first which points to param, cb expects it, see comments above
-          deps = _([alldeps[0]]).append(deps);
+          deps = _([alldeps[0]]).concat(deps);
           cb(err, deps);
         )
   }
@@ -399,40 +410,32 @@ module.exports = bna = {
     { strings: [ ['name', location], ...]
       expressions : [['expr', location], ...]
     }
-    * location is only set if opt.loc is true
-    opt: { loc : true/false }
+    * location is only set if opt.locations is true
+    opt: { locations : true/false }
   ###
-  findRequire : (filepath, opt)->
-    opt?= {}
+  findRequire : (filepath)->
     src = fs.readFileSync(filepath).toString();
 
     if (typeof src != 'string') then src = String(src);
-    src = src.replace(/^#![^\n]*\n/, ''); # remove #! shell marker
 
     modules = { strings : [], expressions : [] };
-    # if .json, .node, or no 'require' keyword found, then return
-    if (src.indexOf('require') == -1 or /\.json$/i.test(filepath) or
-        /\.node$/i.test(filepath) ) then return modules;
+    # if .json, .node, then return
+    if (/\.json$/i.test(filepath) or /\.node$/i.test(filepath) ) then return modules;
 
     try
-      src_ast = esprima.parse(src, opt)
+      src_ast = jsParse(src)
     catch e
-      console.log ("Ignoring #{filepath}, esprima failed to parse due to: #{e}")
+      console.log ("Ignoring #{filepath}, failed to parse due to: #{e}")
       return modules
 
     ast.traverse(src_ast, (node)->
       if ast.isRequire(node)
-        if opt.loc
-          node.loc.file = filepath
-          if (node.arguments.length && node.arguments[0].type == 'Literal')
-            modules.strings.push([node.arguments[0].value, node.loc])
-          else
-            modules.expressions.push([node.arguments[0], node.loc])
+        if (!node.loc) then node.loc={file: filepath, line:'?'}
+        else node.loc.file = filepath; node.loc.line = node.loc.start.line;
+        if (node.arguments.length && node.arguments[0].type == 'Literal')
+          modules.strings.push([node.arguments[0].value, node.loc])
         else
-          if (node.arguments.length && node.arguments[0].type == 'Literal')
-            modules.strings.push([node.arguments[0].value])
-          else
-            modules.expressions.push([node.arguments[0]])
+          modules.expressions.push([node.arguments[0], node.loc])
     )
     return modules;
 
@@ -490,7 +493,7 @@ module.exports = bna = {
     pl = (l)-> if l then l else ''
     pe = (e)-> if e then ', ' + e else ''
     m = (dynamicModules)-> if dynamicModules then JSON.stringify(dynamicModules) else ''
-    "#{path.relative('.',node.loc.fpath)}:#{pl(node.loc.start.line)}: #{msgs[reason]}#{pe(error)} #{m(dynamicModules)}" \
+    "#{path.relative('.',node.loc.file)}:#{pl(node.loc.line)}: #{msgs[reason]}#{pe(error)} #{m(dynamicModules)}" \
       for {node, reason, error, dynamicModules} in warnings
 
   # fuse filepath, write output to directory dstdir, using opts
@@ -583,7 +586,7 @@ module.exports = bna = {
     getreqs = (unit, cache)->
       if unit.fpath of cache then return cache[unit.fpath]
       cache[unit.fpath] = units = []
-      _(units).append(
+      units = _(units).concat(
           _(getreqs(child_unit, cache) for {node: node, unit: child_unit} in unit.requires)
           .flatten() )
       units.push(unit)
@@ -638,15 +641,17 @@ module.exports = bna = {
 
     # do first pass without parsing location info (makes parsing 3x slower), if bad require is detected,
     # then we do another pass with location info, for user-friendly warnings
-    bad_require_detected = false
     dynamic_require_detected = false
     try
-      code = esprima.parse(unit.src, {loc: false})
+      code = jsParse(unit.src)
     catch e
-      console.log ("Ignoring #{filepath}, esprima failed to parse due to: #{e}")
+      console.log ("Ignoring #{filepath}, failed to parse due to: #{e}")
       return unit
     # 1st pass, traverse ast tree, resolve all const-string requires if possible
     ast.traverse(code, [ast.isRequire], (node)->
+      if (!node.loc) then node.loc = {file:filepath, line:'?'}
+      else node.loc.file = filepath; node.loc.line = node.loc.start.line;
+
       arg = node.arguments[0]
       if arg and arg.type == 'Literal'  # require a string
         modulename = arg.value
@@ -658,7 +663,9 @@ module.exports = bna = {
             basedir: path.dirname(filepath)
           });
         catch e
-          bad_require_detected = true;
+          unit.warnings.push
+            node: node,
+            reason: "resolve"
 
         if not e
           runit = bna._parseFile(fullpath, cache)
@@ -667,11 +674,17 @@ module.exports = bna = {
             unit: runit
       else
         dynamic_require_detected = true
+        unit.warnings.push
+          node: node,
+          reason: "nonconst"
+
     )
 
     dynamicModules = []
+    # resolving dynamic require trick: evaluate js once, recored all required modules....
     if dynamic_require_detected then do=>
       dynamicModules = bna.detectDynamicRequires(unit)
+
       for modulename in dynamicModules
         e = undefined
         try
@@ -681,43 +694,18 @@ module.exports = bna = {
           });
         catch e
           unit.warnings.push
-            node: {loc: {fpath: fullpath, start:{line:null}}, arguments: [{'value': modulename}] },
+            node: {loc: {file: fullpath, line: '?', arguments: [{'value': modulename}] }},
             reason: "resolve"
 
         if not e  # only if resolved ok
           # fake node in ast
           if (r for r in unit.requires when r.unit.fpath == fullpath).length == 0
-            node = {loc: {fpath: fullpath, start:{line:null}}, arguments: [{'value': modulename}] }
+            node = {loc: {file: fullpath, line: '?', arguments: [{'value': modulename}] }}
             runit = bna._parseFile(fullpath, cache)
             unit.requires.push {
               node
               unit: runit
             }
-
-    if bad_require_detected or dynamic_require_detected
-      # 2nd pass, if bad 'require' is detected, re-parse file with location info so that
-      # bad require's locations are captured
-      code = esprima.parse(unit.src, {loc: true})
-      ast.traverse(code, [ast.isRequire], (node)->
-        node.loc.fpath = filepath
-        arg = node.arguments[0]
-        if (arg and arg.type == 'Literal')
-          modulename = arg.value
-          try
-            resolver.sync(modulename, {
-              extensions: ['.js', '.node', ".json"],
-              basedir: path.dirname(filepath)
-            });
-          catch e
-            unit.warnings.push
-              node: node,
-              reason: "resolve"
-        else
-          unit.warnings.push
-            node: node,
-            reason: "nonconst"
-            dynamicModules: dynamicModules
-      )
 
     return unit;
   ,
@@ -745,7 +733,7 @@ module.exports = bna = {
       eval src
     catch e
       unit.warnings.push
-        node: {loc: {fpath: unit.fpath, start:{line:null}}, arguments: [{'value':''}] }
+        node: {loc: {file: unit.fpath, line: '?'}, arguments: [{'value':''}]},
         reason: 'dynamicResolveError'
         error : e
     ret = _.unique(dmodules)

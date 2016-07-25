@@ -1,6 +1,6 @@
 {
   "name": "bna",
-  "version": "1.0.6",
+  "version": "2.0.0",
   "description": "build node app",
   "main": "./lib/bna.js",
   "scripts": {
@@ -22,15 +22,16 @@
   ],
   "license": "MIT",
   "dependencies": {
+    "acorn": "^3.2.0",
     "async": "0.2.5",
     "colors": "^1.0.3",
-    "esprima": "1.0.4",
     "fstream-npm": "0.1.4",
+    "lodash": "^4.14.0",
     "optimist": "0.3.5",
     "resolve": "0.3.0",
     "semver": "^4.1.0",
     "source-map-support": "^0.2.7",
-    "under_score": "0.1.0",
+    "underscore": "^1.8.3",
     "wrench": "1.4.4"
   },
   "devDependencies": {

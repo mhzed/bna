@@ -2,12 +2,13 @@
 
 optimist = require('optimist')
     .usage('Build modules and dependencies for app in the current dir.\nUsage: -b -p -c -f file -o out/')
-    .boolean(['b','p','c', 'q', 'w'])
+    .boolean(['b','p','c', 'q', 'w', 'l'])
     .alias('b', 'build')
     .alias('p', 'packagejson')
     .alias('c', 'copy')
     .alias('f', 'fuse')
     .alias('q', 'quiet')
+    .alias('l', 'line')
     .string("fuselib")
     .string('f')
     .string("o")
@@ -19,14 +20,18 @@ optimist = require('optimist')
     .describe("o", 'specify output file or dir for fuse. Optional, default is ./')
     .describe("q", 'quite mode. No warnings')
     .describe('w', 'watch file: fuse on change')
+    .describe('l', 'parse line info')
 ;
 argv = optimist.argv
 bna = require("../lib/bna");
 fs = require("fs");
 path = require("path");
-_ = require("under_score")
+_ = require("underscore")
+
 
 if argv.quiet then bna.quiet = true
+
+if (argv.line) then bna.locations = true
 
 if (!(argv.b || argv.p || argv.c || argv.f || argv.fuselib))
 
