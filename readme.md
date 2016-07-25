@@ -83,6 +83,9 @@ is now completely self-contained:  no need to run "npm install" on target machin
 
 ### fuse use cases
 
+* the required module name is case senstive for fuse.  Watch out on osx and windows
+  where the file path is case insensitive.  Fix this in the future.
+
 #### Create a single js file runnable
 
 

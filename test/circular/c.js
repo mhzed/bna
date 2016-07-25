@@ -3,7 +3,7 @@ var log = require("./log");
 module.exports = C;
 
 log.push("c1");
-var B = require("./B.js");
+var B = require("./b.js");
 log.push("c2");
 
 require("./inherits.js")(C, B);

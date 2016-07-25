@@ -139,11 +139,9 @@ module.exports["test fuse circular"] = function(test) {
     var src = bna.fuse(spath)[0];
     fs.writeFileSync(dpath, src);
 
-    // TODO:  nodejs 6.x fixed circular dependencies.... need to to do the same with fuse
     var logs = require(spath);    // original
     var logs1 = require(dpath);   // fused
     fs.unlinkSync(dpath);
-    //console.log(logs1);
     // the test is to simply executed fused and non-fused versions, make sure output is exactly the same.
     test.deepEqual(logs, logs1, "same load order");
     test.done();
