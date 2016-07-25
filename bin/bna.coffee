@@ -2,13 +2,14 @@
 
 optimist = require('optimist')
     .usage('Build modules and dependencies for app in the current dir.\nUsage: -b -p -c -f file -o out/')
-    .boolean(['b','p','c', 'q', 'w', 'l'])
+    .boolean(['b','p','c', 'q', 'w', 'l', 'v'])
     .alias('b', 'build')
     .alias('p', 'packagejson')
     .alias('c', 'copy')
     .alias('f', 'fuse')
     .alias('q', 'quiet')
     .alias('l', 'line')
+    .alias('v', 'version')
     .string("fuselib")
     .string('f')
     .string("o")
@@ -16,12 +17,14 @@ optimist = require('optimist')
     .describe('p', 'write module dependencies to package.json')
     .describe('c', 'copy depended external modules to local node_modules dir')
     .describe('f', 'generate a single executable js file, see doc.')
+    .describe("v", "print version")
     .describe('fuselib', 'fuse to a library to export modules, see doc.')
     .describe("o", 'specify output file or dir for fuse. Optional, default is ./')
     .describe("q", 'quite mode. No warnings')
     .describe('w', 'watch file: fuse on change')
     .describe('l', 'parse line info')
 ;
+
 argv = optimist.argv
 bna = require("../lib/bna");
 fs = require("fs");
@@ -29,6 +32,9 @@ path = require("path");
 _ = require("underscore")
 
 
+if argv.v
+  console.log(require("../package.json").version);
+  return;
 if argv.quiet then bna.quiet = true
 
 if (argv.line) then bna.locations = true
@@ -38,8 +44,7 @@ if (!(argv.b || argv.p || argv.c || argv.f || argv.fuselib))
   [targetPath] = argv._
   if not targetPath
     console.log(optimist.help());
-    if (fs.existsSync(path.join(process.cwd(), "package.json")))
-      targetPath = process.cwd()
+    return;
   else
     targetPath = path.resolve(targetPath)
   if (targetPath and fs.existsSync(targetPath))

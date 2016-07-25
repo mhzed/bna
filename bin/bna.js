@@ -2,7 +2,7 @@
 (function() {
   var _, argv, bna, callFuseThrottleSec, ddir, deps, dofuse, dstfile, fpath, fs, isDir, k, mfile, optimist, path, resolver, targetPath, v;
 
-  optimist = require('optimist').usage('Build modules and dependencies for app in the current dir.\nUsage: -b -p -c -f file -o out/').boolean(['b', 'p', 'c', 'q', 'w', 'l']).alias('b', 'build').alias('p', 'packagejson').alias('c', 'copy').alias('f', 'fuse').alias('q', 'quiet').alias('l', 'line').string("fuselib").string('f').string("o").describe('b', 'build app, same as -p -c together').describe('p', 'write module dependencies to package.json').describe('c', 'copy depended external modules to local node_modules dir').describe('f', 'generate a single executable js file, see doc.').describe('fuselib', 'fuse to a library to export modules, see doc.').describe("o", 'specify output file or dir for fuse. Optional, default is ./').describe("q", 'quite mode. No warnings').describe('w', 'watch file: fuse on change').describe('l', 'parse line info');
+  optimist = require('optimist').usage('Build modules and dependencies for app in the current dir.\nUsage: -b -p -c -f file -o out/').boolean(['b', 'p', 'c', 'q', 'w', 'l', 'v']).alias('b', 'build').alias('p', 'packagejson').alias('c', 'copy').alias('f', 'fuse').alias('q', 'quiet').alias('l', 'line').alias('v', 'version').string("fuselib").string('f').string("o").describe('b', 'build app, same as -p -c together').describe('p', 'write module dependencies to package.json').describe('c', 'copy depended external modules to local node_modules dir').describe('f', 'generate a single executable js file, see doc.').describe("v", "print version").describe('fuselib', 'fuse to a library to export modules, see doc.').describe("o", 'specify output file or dir for fuse. Optional, default is ./').describe("q", 'quite mode. No warnings').describe('w', 'watch file: fuse on change').describe('l', 'parse line info');
 
   argv = optimist.argv;
 
@@ -13,6 +13,11 @@
   path = require("path");
 
   _ = require("underscore");
+
+  if (argv.v) {
+    console.log(require("../package.json").version);
+    return;
+  }
 
   if (argv.quiet) {
     bna.quiet = true;
@@ -26,9 +31,7 @@
     targetPath = argv._[0];
     if (!targetPath) {
       console.log(optimist.help());
-      if (fs.existsSync(path.join(process.cwd(), "package.json"))) {
-        targetPath = process.cwd();
-      }
+      return;
     } else {
       targetPath = path.resolve(targetPath);
     }

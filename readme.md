@@ -21,7 +21,7 @@ npm install -g bna
 
 In your node projects' root directory (where package.json is), from command line just type
 
-    bna
+    bna .
 
 Read the output and go from there, it's straight-forward.
 
