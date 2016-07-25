@@ -45,17 +45,14 @@ if (!(argv.b || argv.p || argv.c || argv.f || argv.fuselib))
   if (targetPath and fs.existsSync(targetPath))
     if fs.lstatSync(targetPath).isDirectory()
       console.log("Analyzing directory...")
-      bna.dir.npmDependencies(targetPath, (err, deps)->
+      bna.dir.npmDependencies(targetPath, (err, deps, externDeps)->
           if (err) then console.log(err);
           else
               console.log("Module dependencies are:")
               console.log(deps);
-          bna.dir.externDependModules(targetPath, (err, deps)->
-              if (err) then console.log(err);
-              else
+              if externDeps
                   console.log("Extern modules (node_modules located outside of current dir):")
-                  console.log(deps.slice(1));
-          )
+                  console.log(externDeps);
       )
     else
       console.log("Analyzing file...")

@@ -6,6 +6,7 @@ _ = require("underscore")
 acorn       = require("acorn");
 ast         = require("./ast");
 wrench      = require("wrench");
+util = require('util');
 require("colors")
 
 
@@ -176,13 +177,17 @@ module.exports = bna = {
    *   * local    : the module exists locally (can be resolved via require.resolve)
    *
    * @param fpath          : path of main module file, should be what's returned by require.resolve('module')
-   * @param cb(err, dependencies), dependencies is what npm expects in package.json
+   * @param cb(err, alldpes, externdeps, main)
+   *  alldeps:  all dependencies
+      externdeps:  dependences taht do not resite in fpath
+      main :       the main detail for fpath
   ###
   npmDependencies : (fpath, cb) ->
     bna.resolve(require.resolve(fpath), (err, detail)->
       if (err) then return cb(err);
       detail = bna._collapsePackages(detail);
       dependencies = null;
+      externDeps = null;
       if (!err)
         dependencies = _(detail.deps).reduce((memo, depDetail)->
           if (depDetail.package)
@@ -191,59 +196,47 @@ module.exports = bna = {
             memo[depDetail.require] = null;
           return memo;
         , {});
-      cb(err, dependencies);
+        externDeps = bna.externDeps(detail);
+      cb(err, dependencies, externDeps, detail);
     )
   ,
 
   ###
    *  Give a module, find all its dependencies that are NOT located in its local node_module path, useful
-   *  for building the final app
+   *  for building the final app.
+
+   *  Internal helper called by npmDependencies.
    *
-   * @param file     : path of main module file, should be what's returned by require.resolve('module')
-   * @param cb (err, dependencies), where dependencies is an array of following object:
-   *          {
-   *              "require"   : require_name,
-   *              "mpath"     : path to module,
-   *              "version"   : version of module in package.json
-   *          }
-   *          * the first element in dependencies point to the module containing parameter file
   ###
-  externDependModules: (file, cb)->
-    bna.resolve(file, (err, detail)->
-      if (err) then return cb(err);
-      detail = bna._collapsePackages(detail);
+  externDeps: (detail)->
+    ret = [];
+    # find all depended modules not in root's path
+    isPathContained = (path)->
+      for e,i in ret
+        if (path.indexOf(e.mpath) == 0)
+          return true;
+      return false;
 
-      ret = [detail];   # array of dependent modules to copy, [0] is the root module
+    memory = {};    # handle circular reference
+    walk = (detail)->
+      memory[detail.mpath] = true;
+      if (!detail.isSysModule() && !isPathContained(detail.mpath))
+        ret.push(detail);
+      if (detail.deps) then detail.deps.forEach((dep)->
+        if (!memory[dep.mpath])then  walk(dep);
+      );
+    walk(detail);
 
-      # find all depended modules not in root's path
-      isPathContained = (path)->
-        for e,i in ret
-          if (path.indexOf(e.mpath) == 0)
-            return true;
-        return false;
-
-      memory = {};    # handle circular reference
-      walk = (detail)->
-        memory[detail.mpath] = true;
-        if (!detail.isSysModule() && !isPathContained(detail.mpath))
-          ret.push(detail);
-
-        if (detail.deps) then detail.deps.forEach((dep)->
-          if (!memory[dep.mpath])then  walk(dep);
-        );
-      walk(detail);
-
-      ret = _(ret).chain().map((detail)-> # extract wanted values
-        return {
-            'require'   : detail.require,
-            'mpath'     : detail.mpath,
-            'version'   : if detail.package then detail.package.version else null
-        }
-      ).unique((detail)->    # remove duplicates
-        return detail.mpath;
-      ).value();
-      cb(err, ret);
-    )
+    ret = _(ret).chain().map((detail)-> # extract wanted values
+      return {
+          'require'   : detail.require,
+          'mpath'     : detail.mpath,
+          'version'   : if detail.package then detail.package.version else null
+      }
+    ).unique((detail)->    # remove duplicates
+      return detail.mpath;
+    ).value();
+    return ret;
   ,
 
   # npmDependencies/externDependModules on dir: basically recursively scan a dir for all .js file and find their
@@ -280,46 +273,31 @@ module.exports = bna = {
       ,
       npmDependencies : (dir, cb)->
         alldeps = {};
+        allextdeps = [];
         bna.dir._scanDir(dir,
           (file, isDir, cb)->
             f = if isDir then bna.dir.npmDependencies else bna.npmDependencies;
-            f(file, (err, deps)->
+            f(file, (err, deps, extdeps)->
                 _(alldeps).extend(deps);
+                allextdeps = _(allextdeps).concat(extdeps);
                 cb(err);
             )
           ,
           (err)->
             detail = bna.identify(dir);
             delete alldeps[detail.require];
-            cb(err, alldeps);
 
-        )
-      ,
-      externDependModules: (dir, cb)->
-        alldeps = [];
-        bna.dir._scanDir(dir,
-        (file, isDir, cb)->
-          f = if isDir then bna.dir.externDependModules else bna.externDependModules;
-          f(file, (err, deps)->
-            alldeps = _(alldeps).concat(deps);
-            cb(err);
-          )
-        ,
-        (err)->
-          deps = _(alldeps).chain()
-          .unique((d)->
-              return d.mpath
-            )
-          .filter((d)->
-              return d.mpath.indexOf(dir) != 0;
-            )
-          .value();
-          # keep the first which points to param, cb expects it, see comments above
-          deps = _([alldeps[0]]).concat(deps);
-          cb(err, deps);
+            allextdeps = _(allextdeps).chain()
+            .unique((d)->return d.mpath)
+            .filter((d)->return d.mpath.indexOf(dir) != 0)
+            .value();
+
+            cb(err, alldeps, allextdeps, {mpath:dir} );
+
         )
   }
   ,
+
   ###
    * Make extern dependencies local by copying them to local node_modules folder
    * @param mpath     path to a dir or file (the file must be main entry point of module, i.e. returned by require.resolve
@@ -330,24 +308,24 @@ module.exports = bna = {
   copyExternDependModules : (mpath, progressCb, doneCb)->
     fs.stat(mpath, (err, stat)->
       if (err) then return cb(err);
-      f = if stat.isDirectory() then bna.dir.externDependModules else bna.externDependModules;
-      f(mpath, (err, dependencies)->
-        targetPath = path.join(dependencies[0].mpath, "node_modules")
+      f = if stat.isDirectory() then bna.dir.npmDependencies else bna.npmDependencies;
+      f(mpath, (err, alldeps, dependencies, main)->
+
+        targetPath = path.join(main.mpath, "node_modules")
         if (!fs.existsSync(targetPath))
           wrench.mkdirSyncRecursive(targetPath);
         async.eachSeries(
-            dependencies.slice(1),
-        (d, cb)->
-          targetModulePath = path.join(targetPath, path.basename(d.mpath));
-
-          progressCb(_("Copying '%s': %s => %s").format(
-              d.require,
-              path.relative(process.cwd(), d.mpath),
-              path.relative(process.cwd(), targetModulePath)));
-          if (!fs.existsSync(targetModulePath)) then fs.mkdirSync(targetModulePath);
-          wrench.copyDirRecursive(d.mpath, targetModulePath, cb);
-        ,
-            doneCb
+          dependencies,
+          (d, cb)->
+            targetModulePath = path.join(targetPath, path.basename(d.mpath));
+            progressCb(util.format("Copying '%s': %s => %s",
+                d.require,
+                path.relative(process.cwd(), d.mpath),
+                path.relative(process.cwd(), targetModulePath)));
+            if (!fs.existsSync(targetModulePath)) then fs.mkdirSync(targetModulePath);
+            wrench.copyDirRecursive(d.mpath, targetModulePath, cb);
+          ,
+          doneCb
         );
       )
     );
@@ -380,17 +358,17 @@ module.exports = bna = {
         # merge into oldDep
         _(deps).each((version, name)->
           if (version == null)
-            errList.push(_("%s is not versioned!").format(name));
+            errList.push(util.format("%s is not versioned!",name));
           else if (!(name of oldDep))
             newdep[name] = version;
           else  # use semver to check
             oldVer = oldDep[name];
             if /:\/\//.test(oldVer) # test for url pattern
-              console.log _("Package %s is ignored due to non-semver %s").format(name, oldVer);
+              console.log util.format("Package %s is ignored due to non-semver %s",name, oldVer);
               delete oldDep[name]
               newdep[name] = oldVer   # keep old value
             else if (!semver.satisfies(version, oldVer))
-              errList.push(_("%s: actual version %s does not satisfy package.json's version %s").format(name, version, oldVer));
+              errList.push(util.format("%s: actual version %s does not satisfy package.json's version %s",name, version, oldVer));
             else
               delete oldDep[name]
               newdep[name] = oldVer

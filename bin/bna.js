@@ -35,21 +35,17 @@
     if (targetPath && fs.existsSync(targetPath)) {
       if (fs.lstatSync(targetPath).isDirectory()) {
         console.log("Analyzing directory...");
-        bna.dir.npmDependencies(targetPath, function(err, deps) {
+        bna.dir.npmDependencies(targetPath, function(err, deps, externDeps) {
           if (err) {
-            console.log(err);
+            return console.log(err);
           } else {
             console.log("Module dependencies are:");
             console.log(deps);
-          }
-          return bna.dir.externDependModules(targetPath, function(err, deps) {
-            if (err) {
-              return console.log(err);
-            } else {
+            if (externDeps) {
               console.log("Extern modules (node_modules located outside of current dir):");
-              return console.log(deps.slice(1));
+              return console.log(externDeps);
             }
-          });
+          }
         });
       } else {
         console.log("Analyzing file...");

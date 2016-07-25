@@ -9,7 +9,7 @@ log.push("b2");
 require("./inherits.js")(B, A);
 
 function B() {
-    B.super.call(this);
+    A.call(this);
     this.b = 'b'
 }
 this.BB = 'bb';

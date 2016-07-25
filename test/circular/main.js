@@ -13,8 +13,8 @@ log.push(b)
 log.push(c);
 
 // two B are created as result
-log.push(B === C.super);         // false
+log.push(B === C.super_);         // false
 log.push(b instanceof B);        // true
-log.push(b instanceof C.super);  // false
+log.push(b instanceof C.super_);  // false
 
 module.exports = log;

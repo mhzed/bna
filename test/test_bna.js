@@ -2,7 +2,7 @@
 require('source-map-support').install();
 var bna  = require("../lib/bna");
 var path = require("path");
-var _    = require("under_score");
+var _    = require("underscore");
 var fs   = require("fs");
 var async = require("async");
 
@@ -20,7 +20,7 @@ module.exports["test npmDependencies"] = function(test) {
 };
 
 module.exports["test externDependModules"] = function(test) {
-    bna.externDependModules(require.resolve("./projects/p1"), function(err, deps){
+    bna.npmDependencies(require.resolve("./projects/p1"), function(err, _internalDeps, deps){
         test.ifError(err);
         test.equal(_(deps).find(function(d) { return d.require == 'a'}).require, 'a', 'a should be found');
         test.equal(_(deps).find(function(d) { return d.require == 'b'}).require, 'b', 'b should be found');
@@ -48,16 +48,17 @@ module.exports["test npmDependencies on dir"] = function(test) {
 };
 
 module.exports["test externDependModules on dir"] = function(test) {
-    bna.externDependModules(require.resolve("./projects/p2"), function(err, deps){
+    bna.npmDependencies(require.resolve("./projects/p2"), function(err, _internalDeps, deps){
         test.ifError(err);
         test.equal(_(deps).find(function(d) { return d.require == 'a'}).require, 'a', 'a should be found');
         test.equal(_(deps).find(function(d) { return d.require == 'b'}), undefined, 'b should not be found');
         test.equal(_(deps).find(function(d) { return d.require == 'c'}), undefined, 'c should not be found');
         test.equal(_(deps).find(function(d) { return require == 'p1_x'}), undefined, 'p1_x should not be found');
 
-        bna.dir.externDependModules(path.join(__dirname, "./projects/p2"), function(err, deps){
+        bna.dir.npmDependencies(path.join(__dirname, "./projects/p2"), function(err, _interDeps, deps){
             test.ifError(err);
             test.equal(_(deps).find(function(d) { return d.require == 'a'}).require, 'a', 'a should be found');
+            // scanning the folder
             test.equal(_(deps).find(function(d) { return d.require == 'b'}).require, 'b', 'b should be found');
             test.done();
         })
@@ -138,9 +139,11 @@ module.exports["test fuse circular"] = function(test) {
     var src = bna.fuse(spath)[0];
     fs.writeFileSync(dpath, src);
 
-    var logs = require(spath);
-    var logs1 = require(dpath);
+    // TODO:  nodejs 6.x fixed circular dependencies.... need to to do the same with fuse
+    var logs = require(spath);    // original
+    var logs1 = require(dpath);   // fused
     fs.unlinkSync(dpath);
+    //console.log(logs1);
     // the test is to simply executed fused and non-fused versions, make sure output is exactly the same.
     test.deepEqual(logs, logs1, "same load order");
     test.done();
