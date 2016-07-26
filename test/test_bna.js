@@ -9,6 +9,7 @@ var async = require("async");
 module.exports["test npmDependencies"] = function(test) {
     bna.npmDependencies(require.resolve("./projects/p1"), function(err, deps){
         test.ifError(err);
+        //console.log(deps);
         test.equal('a' in deps, true, 'depend on a');
         test.equal('b' in deps, true, 'depend on b');
         test.equal('c' in deps, true, 'depend on c');
@@ -161,7 +162,7 @@ module.exports["test fuse binary components"] = function(test) {
     test.done()
 };
 
-module.exports["test conflict modules"] = function(test) {
+module.exports["test conflict modules in fusing as library"] = function(test) {
     var pdir = path.resolve(__dirname, "./projects");
     var ddir = path.resolve(__dirname, "./");
     bna.fuseDirTo(pdir, ddir, { aslib: true, dstfile: "test.project.fuse.js"}, function() {
@@ -169,7 +170,7 @@ module.exports["test conflict modules"] = function(test) {
 
         test.equal( ms['p1@0.0.1'] !== undefined, true, "p1 exists");
         test.equal( ms['p1@0.0.2'] !== undefined, true, "p1 exists");
-        fs.unlinkSync(path.join(ddir, "test.project.fuse.js"));
+        //fs.unlinkSync(path.join(ddir, "test.project.fuse.js"));
         test.done();
 
     })

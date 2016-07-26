@@ -126,6 +126,7 @@ module.exports = fuse = {
         if (unit.sm) then unit.sm.line = fuse._lc(code) # keep track of line for sourcemap
         code += src
         code += """
+
           //******** end file #{pkginfo}************
               __m['#{unit.key}'].sts = 1;
             }).bind(this)

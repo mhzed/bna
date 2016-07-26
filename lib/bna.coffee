@@ -44,25 +44,22 @@ module.exports = bna = {
    *
    * @param file  : path to js file to identify
    * @returns  {
-   *    "require": "mylib"
+   *     "mname": "mylib",    # module name, as used by require
    *     "path"   : "node_modules/mylib/file.js",
-   *     "mpath"  : "node_modules/mylib",
+   *     "mpath"  : "node_modules/mylib",             # the path of module that contains this file
    *     "package" : { package.json object if exists }
    *   }
    *   - "mpath" may point to a file in case of node_modules/mylib.js
   ###
   identify : (file) ->
-    ret = {
-      "path"      : file,
-      isSysModule : ()-> return this.path == this.require  # if a system module like 'path' or 'fs'
-    };
+    ret = {};
 
     # if file is a path location, then find module path containg file
     ret.mpath = if /\/|\\/.test(file) then bna.findModulePath(file) else file;
     if (ret.mpath == file)
-      ret.require = path.basename(ret.mpath).replace(/\.(js|node)$/i, '');
+      ret.mname = path.basename(ret.mpath).replace(/\.(js|node)$/i, '');
     else
-      ret.require = path.basename(ret.mpath);
+      ret.mname = path.basename(ret.mpath);
       packageJsonFile = path.join(ret.mpath, "package.json");
       if (fs.existsSync(packageJsonFile))
         ret.package = JSON.parse(fs.readFileSync(packageJsonFile));
@@ -90,92 +87,36 @@ module.exports = bna = {
     else if (fs.existsSync(fpath = path.join(mpath, "index.node")))
       return fpath
     return null
-  ###
-   * async resolve all dependencies of file,
-   * because nodejs supports circular require, returned data may contain circular reference, so when you recursively
-   * walk the tree, make sure you handle the circular reference, see "_collapsePackages" for example.
-   *
-   * @param file          : path to the js file
-   * @param level         : recursively resolve up to this many levels, optional, default infinite
-   * @param cb(err, detail) : where obj is what's returned by identify, with addition of 'deps' member
-   *                        detail.deps   :  what this file depends on, as an array of more 'identify' details
-  ###
-  resolve : (file, level, cb) ->
-    if (_(level).isFunction())    # handle optional level param
-      cb = level;
-      level = -1;
-
-    detail = bna.identify(file); # identify module details of file
-    bna._cache[file] = detail; # cache result early, for circular require
-
-    if (level == 0 || detail.isSysModule() )   # stop at level 0, or at system module (contains no path divider)
-      cb(null, detail);
-      return;
-
-    # resolve dependencies
-    async.waterfall [
-      (cb) ->
-        allrequires = bna.findRequire(file);
-        if allrequires.expressions.length > 0  # complex requires are ignored, thus print warnings
-          pl = (p)->path.relative(process.cwd(), p)
-          for [expr,loc] in allrequires.expressions
-            bna.warn "Warning: dynamic require detected at #{pl(loc.file)}:#{loc.line}"
-
-        requires = (name for [name,loc] in allrequires.strings); # find all requires where argument is string!
-        async.map(# resolve required items to actual file path
-          requires,
-          (require_item, cb) ->    # resolve required item from file's basedir
-            resolver(require_item, { extensions: [".js", ".node", ".json"], basedir: path.dirname(path.resolve(file)) }, (err, resolved) ->
-              if (err) then cb(null, null);    # suppress resolve error
-              else cb(null, resolved);
-            );
-          ,
-          (err, resolved_items) ->
-            resolved_items = _.compact(resolved_items);
-            cb(err, resolved_items);
-        );
-    ,
-      (depend_files, cb) ->
-        async.map(# recursively resolve
-          depend_files,
-          (resolved_file, cb) ->
-            if (resolved_file of bna._cache)    # use cache
-              cb(null, bna._cache[resolved_file]);
-            else
-              bna.resolve(resolved_file, level - 1, cb);
-          ,
-          (err, details) ->    # all resolved, insert into "deps" member of this detail
-            detail.deps = details;
-            cb(err, detail);
-        )
-    ]
-    , cb  # (err, detail),  async completion
-  ,
 
   ###
-      Internal, collapse dependent files belong to same package
-      parameter is not modified
+    Internal, collapse dependent files belong to same package
+    assumes unit.requires is [ {node, unit} ....] when passed in (as returned by _parseFile)
+    on output, unit.requires is [ unit, .... ],  the other non consequential members are stripped out
+    the recursive tree data structure is preserved.
   ###
-  _collapsePackages : (paramDetail) ->
+  _collapsePackages : (unit) ->
     memory = {}; # handle circular reference
-    doCollapse = (paramDetail)->
-      memory[paramDetail.mpath] = true;
-      detail = _({}).extend(paramDetail);
-      if (!detail.deps) then return detail;
-      deps = _(detail.deps).reduce((memo, dep) ->
-        if (detail.mpath == dep.mpath)     # same package!
-          if (dep.deps != undefined) then memo = _(memo).concat(dep.deps);
-        else memo.push(dep);
+    doCollapse = (unit)->
+      memory[unit.mpath] = true;
+      detail = _({}).extend(unit);
+      if (!detail.requires) then return detail;
+      # first pass, find all requires that are not in the same module
+      reqs = _(detail.requires).reduce((memo, {unit}) ->
+        if (detail.mpath == unit.mpath)     # same package!
+          if (unit.requires != undefined) then memo = _(memo).concat(unit for {unit} in unit.requires);
+        else memo.push(unit);
         return memo;
       , []);
-      detail.deps = _(deps).chain().map((dep) ->
-        if (memory[dep.mpath]) then return dep;
-        else return doCollapse(dep);
-      ).unique((dep)->   # remove duplicates
-        return dep.mpath;
+
+      detail.requires = _(reqs).chain().map((unit) ->
+        if (memory[unit.mpath]) then return unit;
+        else return doCollapse(unit);
+      ).unique((unit)->   # remove duplicates
+        return unit.mpath;
       ).value();
       return detail;
-    return doCollapse(paramDetail)
+
+    return doCollapse(unit)
   ,
   ###
    * figures out module dependencies for you,
@@ -191,22 +132,30 @@ module.exports = bna = {
       main :       the main detail for fpath
   ###
   npmDependencies : (fpath, cb) ->
-    bna.resolve(require.resolve(fpath), (err, detail)->
-      if (err) then return cb(err);
-      detail = bna._collapsePackages(detail);
+    try
+      unit = bna._parseFile(fpath, bna._cache);
+
+      # warn about dynamic requires??
+      #units = bna._flattenRequires(unit)
+      #warnings = _(unit.warnings for unit in units).flatten()
+      #bna.warn(msg) for msg in bna.prettyWarnings(warnings);
+
+      unit = bna._collapsePackages(unit);
+      #console.log(JSON.stringify(unit,null, "  "));
       dependencies = null;
       externDeps = null;
-      if (!err)
-        dependencies = _(detail.deps).reduce((memo, depDetail)->
-          if (depDetail.package)
-            memo[depDetail.require] = depDetail.package.version;
-          else if (!depDetail.isSysModule())
-            memo[depDetail.require] = null;
-          return memo;
-        , {});
-        externDeps = bna.externDeps(detail);
-      cb(err, dependencies, externDeps, detail);
-    )
+
+      dependencies = _(unit.requires).reduce((memo, unit)->
+        if (unit.package)
+          memo[unit.mname] = unit.package.version;
+        else if (!unit.isCore)
+          memo[unit.mname] = null;
+        return memo;
+      , {});
+      externDeps = bna.externDeps(unit);
+      cb(null, dependencies, externDeps, unit);
+    catch e
+      cb(e);
   ,
 
   ###
@@ -216,7 +165,7 @@ module.exports = bna = {
    *  Internal helper called by npmDependencies.
    *
   ###
-  externDeps: (detail)->
+  externDeps: (unit)->
     ret = [];
     # find all depended modules not in root's path
     isPathContained = (path)->
@@ -226,23 +175,23 @@ module.exports = bna = {
       return false;
 
     memory = {};    # handle circular reference
-    walk = (detail)->
-      memory[detail.mpath] = true;
-      if (!detail.isSysModule() && !isPathContained(detail.mpath))
-        ret.push(detail);
-      if (detail.deps) then detail.deps.forEach((dep)->
-        if (!memory[dep.mpath])then  walk(dep);
+    walk = (unit)->
+      memory[unit.mpath] = true;
+      if (!unit.isCore && !isPathContained(unit.mpath))
+        ret.push(unit);
+      if (unit.requires) then unit.requires.forEach((unit)->
+        if (!memory[unit.mpath])then  walk(unit);
       );
-    walk(detail);
+    walk(unit);
 
-    ret = _(ret).chain().map((detail)-> # extract wanted values
+    ret = _(ret).chain().map((unit)-> # extract wanted values
       return {
-          'require'   : detail.require,
-          'mpath'     : detail.mpath,
-          'version'   : if detail.package then detail.package.version else null
+          'require'   : unit.mname,
+          'mpath'     : unit.mpath,
+          'version'   : if unit.package then unit.package.version else null
       }
-    ).unique((detail)->    # remove duplicates
-      return detail.mpath;
+    ).unique((unit)->    # remove duplicates
+      return unit.mpath;
     ).value();
     return ret;
   ,
@@ -293,7 +242,7 @@ module.exports = bna = {
           ,
           (err)->
             detail = bna.identify(dir);
-            delete alldeps[detail.require];
+            delete alldeps[detail.mname];
 
             allextdeps = _(allextdeps).chain()
             .unique((d)->return d.mpath)
@@ -327,7 +276,7 @@ module.exports = bna = {
           (d, cb)->
             targetModulePath = path.join(targetPath, path.basename(d.mpath));
             progressCb(util.format("Copying '%s': %s => %s",
-                d.require,
+                d.mname,
                 path.relative(process.cwd(), d.mpath),
                 path.relative(process.cwd(), targetModulePath)));
             if (!fs.existsSync(targetModulePath)) then fs.mkdirSync(targetModulePath);
@@ -391,42 +340,25 @@ module.exports = bna = {
       )
     )
   ,
-  ###
-    Given js sourcecode, find require, returns
-    { strings: [ ['name', location], ...]
-      expressions : [['expr', location], ...]
-    }
-  ###
-  findRequire : (filepath)->
-    src = fs.readFileSync(filepath).toString();
 
-    if (typeof src != 'string') then src = String(src);
 
-    modules = { strings : [], expressions : [] };
-    # if .json, .node, then return
-    if (/\.json$/i.test(filepath) or /\.node$/i.test(filepath) ) then return modules;
+  # get all dependencies including self, deduplicated, and flattened
+  _flattenRequires : (unit)->
+    getreqs = (unit, cache)->   # use cache to handle circular require
+      if unit.fpath of cache then return cache[unit.fpath]
+      cache[unit.fpath] = units = []
+      deps = _(getreqs(child_unit, cache) for {node: node, unit: child_unit} in unit.requires).flatten()
+      (units.push d) for d in deps
+      units.push(unit)
+      units
+    units = getreqs(unit, {});            # flatten
+    _(units).unique (unit)->unit.fpath    # de-dup
 
-    try
-      src_ast = jsParse(src)
-    catch e
-      console.log ("Ignoring #{filepath}, failed to parse due to: #{e}")
-      return modules
-
-    ast.traverse(src_ast, (node)->
-      if ast.isRequire(node)
-        if (!node.loc) then node.loc={file: filepath, line:'?'}
-        else node.loc.file = filepath; node.loc.line = node.loc.start.line;
-        if (node.arguments.length && node.arguments[0].type == 'Literal')
-          modules.strings.push([node.arguments[0].value, node.loc])
-        else
-          modules.expressions.push([node.arguments[0], node.loc])
-    )
-    return modules;
 
   # filepath:  path to the file to fuse
   # outdir : the output dir, needed for sourcemap concat
   # moduleName: name of main module, a global var of moduleName is created (for browser), set '' to not create
-  # opts: { aslib: true|false, prependCode: "var x = require('x');" }
+  # opts: { aslib: true|false, fakeCode: "var x = require('x');" }
   # return [content, binaryUnits, warnings, units]
   # content: "fused" source code
   # binaryUnits: the binary units (.node files)
@@ -435,20 +367,10 @@ module.exports = bna = {
   fuse : (filepath, outdir, moduleName, opts)->
     opts ?= {}        # aslib: true|false
     filepath = path.resolve(filepath)
-    unit = bna._parseFile(filepath, {}, opts.fakeCode)
-
-    # get all dependencies, handles circular require via cache.
-    getreqs = (unit, cache)->
-      if unit.fpath of cache then return cache[unit.fpath]
-      cache[unit.fpath] = units = []
-      deps = _(getreqs(child_unit, cache) for {node: node, unit: child_unit} in unit.requires).flatten()
-      (units.push d) for d in deps
-      units.push(unit)
-      units
+    unit = bna._parseFile(filepath, {}, true, opts.fakeCode)
 
     # get all dependencies including self (filepath), deduplicated
-    units = getreqs(unit,{})
-    units = _(units).unique (unit)->unit.fpath
+    units = bna._flattenRequires(unit)
     warnings = _(unit.warnings for unit in units).flatten()
 
     ret = (require("./fuse")).generate({
@@ -508,7 +430,6 @@ module.exports = bna = {
       if fs.existsSync(dfile)
         bna.warn("Skipped copying #{dfile}, already exists.")
       else
-        #bna.warn("Copying to #{dfile}")
         wrench.mkdirSyncRecursive(path.dirname(dfile))
         fs.createReadStream(bunit.fpath).pipe(fs.createWriteStream(dfile));
     return units
@@ -590,14 +511,16 @@ module.exports = bna = {
   # helper: parse source code, recursively analyze require in code, return results in a nested tree structure
   # filepath: must be absolute path
   ###
-  _parseFile : (filepath, cache, overrideContent)->
+  _parseFile : (filepath, cache, ifStoreSrc, fakeCode)->
     if filepath of cache then return cache[filepath]
     isCore = not /[\\\/]/.test(filepath);
     isBinary = /\.node$/i.test(filepath)
     unit = {
       isCore  : isCore,     # built-in nodejs modules
       isBinary : isBinary,  # binary modules, ".node" extension
-      fpath : filepath,
+      fpath : filepath,     # the file path
+      mpath : '',           # the path of module that contains this file
+      mname : '',           # the module name
       src   : "",
       requires : [],   # array of dependencies, each element is {node, unit}
                        # node is the parded ast tree node
@@ -608,8 +531,6 @@ module.exports = bna = {
     }
     cache[filepath] = unit
     if isCore or isBinary then return unit
-    if overrideContent then unit.src = overrideContent
-    else unit.src = fs.readFileSync(filepath).toString().replace(/^#![^\n]*\n/, '') # remove shell script marker
     if path.extname(filepath).toLowerCase() == ".json" then return unit
 
     # determine if parameter filepath itself represents a module, if so, mark the module by setting the
@@ -617,21 +538,28 @@ module.exports = bna = {
     do ->
       detail = bna.identify(filepath)
 
+      unit.mname = detail.mname;
+      unit.mpath = detail.mpath;
+      unit._detailPackage = detail.package;
       mainfiles = [path.join(detail.mpath, "index.js"), path.join(detail.mpath, "index.node")]
       if (detail.package)
-        detail.package.name = detail.require  # ensure correct package name
+        detail.package.name = detail.mname  # ensure correct package name
         if detail.package.main
           main = path.resolve(detail.mpath, detail.package.main)
           mainfiles.push(main)
           # append .js .node variations as well
           if (path.extname(main) == '') then mainfiles.push ["#{main}.js", "#{main}.node"]...
       if unit.fpath in mainfiles
-        unit.package = detail.package or {name: detail.require, version: 'x'} # construct default package if no package.json
+        unit.package = detail.package or {name: detail.mname, version: 'x'} # construct default package if no package.json
 
     # do first pass without parsing location info (makes parsing 3x slower), if bad require is detected,
     # then we do another pass with location info, for user-friendly warnings
     try
-      code = jsParse(unit.src)
+      if fakeCode then src = fakeCode
+      else src = fs.readFileSync(filepath).toString().replace(/^#![^\n]*\n/, '') # remove shell script marker
+
+      if ifStoreSrc then unit.src = src
+      code = jsParse(src)
     catch e
       console.log ("Ignoring #{filepath}, failed to parse due to: #{e}")
       return unit
@@ -656,7 +584,7 @@ module.exports = bna = {
             reason: "resolve"
 
         if not e
-          runit = bna._parseFile(fullpath, cache)
+          runit = bna._parseFile(fullpath, cache,ifStoreSrc)
           unit.requires.push
             name : modulename
             node: node,
@@ -681,7 +609,7 @@ module.exports = bna = {
           });
           # only if resolved ok
           node = {loc: {file: fullpath, line: '?'} } #
-          runit = bna._parseFile(fullpath, cache)
+          runit = bna._parseFile(fullpath, cache, ifStoreSrc)
           unit.requires.push {
             name : modulename
             node
