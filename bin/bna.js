@@ -2,7 +2,7 @@
 (function() {
   var _, argv, bna, callFuseThrottleSec, ddir, deps, dofuse, dstfile, fpath, fs, isDir, k, mfile, optimist, path, resolver, targetPath, v;
 
-  optimist = require('optimist').usage('Build modules and dependencies for app in the current dir.\nUsage: -b -p -c -f file -o out/').boolean(['b', 'p', 'c', 'q', 'w', 'l', 'v']).alias('b', 'build').alias('p', 'packagejson').alias('c', 'copy').alias('f', 'fuse').alias('q', 'quiet').alias('l', 'line').alias('v', 'version').string("fuselib").string('f').string("o").describe('b', 'build app, same as -p -c together').describe('p', 'write module dependencies to package.json').describe('c', 'copy depended external modules to local node_modules dir').describe('f', 'generate a single executable js file, see doc.').describe("v", "print version").describe('fuselib', 'fuse to a library to export modules, see doc.').describe("o", 'specify output file or dir for fuse. Optional, default is ./').describe("q", 'quite mode. No warnings').describe('w', 'watch file: fuse on change').describe('l', 'parse line info');
+  optimist = require('optimist').usage('Build modules and dependencies for app in the current dir.\nUsage: -b -p -c -f file -o out/').boolean(['b', 'p', 'c', 'q', 'w', 'l', 'v', 'jsx']).alias('b', 'build').alias('p', 'packagejson').alias('c', 'copy').alias('f', 'fuse').alias('q', 'quiet').alias('l', 'line').alias('v', 'version').string("fuselib").string('f').string("o").describe("v", "print version").describe('b', 'build app, same as -p -c together').describe('p', 'write module dependencies to package.json').describe('c', 'copy depended external modules to local node_modules dir').describe('f', 'generate a single executable js file, see doc.').describe('jsx', 'enable react jsx file support').describe('fuselib', 'fuse to a library to export modules, see doc.').describe("o", 'specify output file or dir for fuse. Optional, default is ./').describe("q", 'quite mode. No warnings').describe('w', 'watch file: fuse on change').describe('l', 'parse line info');
 
   argv = optimist.argv;
 
@@ -25,6 +25,10 @@
 
   if (argv.line) {
     bna.locations = true;
+  }
+
+  if (argv.jsx) {
+    bna.enableJsx();
   }
 
   if (!(argv.b || argv.p || argv.c || argv.f || argv.fuselib)) {
@@ -187,29 +191,33 @@
               newWatchers = {};
               for (i = 0, len = units.length; i < len; i++) {
                 unit = units[i];
-                if (unit.fpath in watchers) {
-                  newWatchers[unit.fpath] = watchers[unit.fpath];
-                  delete watchers[unit.fpath];
-                } else {
-                  (function(unit) {
-                    console.log("Begin watching " + (path.relative('.', unit.fpath)));
-                    return newWatchers[unit.fpath] = fs.watchFile(unit.fpath, function(e) {
-                      return onChange(e, unit.fpath);
-                    });
-                  })(unit);
+                if (!unit.isCore) {
+                  if (unit.fpath in watchers) {
+                    newWatchers[unit.fpath] = watchers[unit.fpath];
+                    delete watchers[unit.fpath];
+                  } else {
+                    (function(unit) {
+                      if (!argv.quiet) {
+                        console.log("Begin watching " + (path.relative('.', unit.fpath)));
+                      }
+                      return newWatchers[unit.fpath] = fs.watchFile(unit.fpath, function(e) {
+                        return onChange(e, unit.fpath);
+                      });
+                    })(unit);
+                  }
                 }
               }
               for (fp in watchers) {
                 watcher = watchers[fp];
-                console.log("Stop watching  " + (path.relative('.', fp)));
+                if (!argv.quiet) {
+                  console.log("Stop watching  " + (path.relative('.', fp)));
+                }
                 fs.unwatchFile(fp);
               }
               return watchers = newWatchers;
             };
           })();
-          return dofuse(function(units) {
-            return watch(units, onChange);
-          });
+          return dofuse(watch);
         });
       })(this)();
     } else {

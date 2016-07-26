@@ -3,24 +3,32 @@ resolver    = require("resolve");
 async       = require("async");
 path        = require("path");
 _ = require("underscore")
-acorn       = require("acorn");
 ast         = require("./ast");
 wrench      = require("wrench");
 util = require('util');
 require("colors")
 
+acornjsx    = require("acorn-jsx");
+acorn       = require("acorn");
 
-jsParse = (src, opt)=>
-  acorn.parse(src, _.extend(opt || {}, {
-    ecmaVersion : 6,
-    allowImportExportEverywhere: true,
-    allowHashBang: true,
-    allowReturnOutsideFunction: true,
-    locations : bna.locations
-  }));
+Parser      = acorn
+ParserOptions = {
+  ecmaVersion : 6,
+  allowImportExportEverywhere: true,
+  allowHashBang: true,
+  allowReturnOutsideFunction: true,
+  locations : false
+}
+
+jsParse = (src)=>
+  Parser.parse(src, _.extend({}, ParserOptions, {locations : bna.locations}));
 
 
 module.exports = bna = {
+  enableJsx : ()->
+    Parser = acornjsx
+    ParserOptions.plugins = {jsx:true}
+
   quiet  : false,
   locations : false,    # where to ask parser to save line locations
 
@@ -388,8 +396,6 @@ module.exports = bna = {
     { strings: [ ['name', location], ...]
       expressions : [['expr', location], ...]
     }
-    * location is only set if opt.locations is true
-    opt: { locations : true/false }
   ###
   findRequire : (filepath)->
     src = fs.readFileSync(filepath).toString();
@@ -468,11 +474,12 @@ module.exports = bna = {
       'resolve' : 'require ignored because parameter can not be resolved'
       'dynamicResolveError' : 'dynamic required module resolve error'
     }
-    pl = (l)-> if l then l else ''
     pe = (e)-> if e then ', ' + e else ''
-    m = (dynamicModules)-> if dynamicModules then JSON.stringify(dynamicModules) else ''
-    "#{path.relative('.',node.loc.file)}:#{pl(node.loc.line)}: #{msgs[reason]}#{pe(error)} #{m(dynamicModules)}" \
-      for {node, reason, error, dynamicModules} in warnings
+    "#{path.relative('.',node.loc.file)}:#{node.loc.line}: #{msgs[reason]}#{pe(error)}" \
+      for {node, reason, error} in warnings when reason != 'nonconst'
+    lines = (locs)=>((l.line for l in locs).join(','))
+    "#{path.relative('.',locs[0].file)}:#{lines(locs)}: #{msgs[reason]}#{modules.join(',')}" \
+      for {reason, locs, modules} in warnings when reason == 'nonconst'
 
   # fuse filepath, write output to directory dstdir, using opts
   # opts: aslib: true|false
@@ -501,7 +508,7 @@ module.exports = bna = {
       if fs.existsSync(dfile)
         bna.warn("Skipped copying #{dfile}, already exists.")
       else
-        bna.warn("Copying to #{dfile}")
+        #bna.warn("Copying to #{dfile}")
         wrench.mkdirSyncRecursive(path.dirname(dfile))
         fs.createReadStream(bunit.fpath).pipe(fs.createWriteStream(dfile));
     return units
@@ -579,8 +586,10 @@ module.exports = bna = {
       ret[u.package.name] = u.package.version
     [ret, warnings]
 
+  ###
   # helper: parse source code, analyze require, return results in a nested tree structure
   # filepath: must be absolute path
+  ###
   _parseFile : (filepath, cache, overrideContent)->
     if filepath of cache then return cache[filepath]
     isCore = not /[\\\/]/.test(filepath);
@@ -590,7 +599,9 @@ module.exports = bna = {
       isBinary : isBinary,  # binary modules, ".node" extension
       fpath : filepath,
       src   : "",
-      requires : [],   # array of dependencies
+      requires : [],   # array of dependencies, each element is {node, unit}
+                       # node is the parded ast tree node
+                       # unit is another unit
       warnings : [],
       # if set, then this file is the "main" file of a node module, as defined by nodejs
       package : undefined,
@@ -619,17 +630,16 @@ module.exports = bna = {
 
     # do first pass without parsing location info (makes parsing 3x slower), if bad require is detected,
     # then we do another pass with location info, for user-friendly warnings
-    dynamic_require_detected = false
     try
       code = jsParse(unit.src)
     catch e
       console.log ("Ignoring #{filepath}, failed to parse due to: #{e}")
       return unit
     # 1st pass, traverse ast tree, resolve all const-string requires if possible
+    dynLocs = []  # store dynamic require locations
     ast.traverse(code, [ast.isRequire], (node)->
       if (!node.loc) then node.loc = {file:filepath, line:'?'}
       else node.loc.file = filepath; node.loc.line = node.loc.start.line;
-
       arg = node.arguments[0]
       if arg and arg.type == 'Literal'  # require a string
         modulename = arg.value
@@ -648,42 +658,44 @@ module.exports = bna = {
         if not e
           runit = bna._parseFile(fullpath, cache)
           unit.requires.push
-            node: node,   # node.arguments[0].value is the require name
+            name : modulename
+            node: node,
             unit: runit
       else
-        dynamic_require_detected = true
-        unit.warnings.push
-          node: node,
-          reason: "nonconst"
-
+        dynLocs.push(node.loc)
     )
 
-    dynamicModules = []
-    # resolving dynamic require trick: evaluate js once, recored all required modules....
-    if dynamic_require_detected then do=>
+    # resolving dynamic require trick: evaluate js once, record all required modules....
+    if dynLocs.length > 0 then do=>
       dynamicModules = bna.detectDynamicRequires(unit)
+      # filter out already required string modules
+      dynamicModules = (m for m in dynamicModules when not _(unit.requires).find((e)=>e.name==m))
 
       for modulename in dynamicModules
+        # filter out required modules that are already parsed
         e = undefined
         try
           fullpath = resolver.sync(modulename, {
             extensions: ['.js', '.node', '.json'],
             basedir: path.dirname(filepath)
           });
+          # only if resolved ok
+          node = {loc: {file: fullpath, line: '?'} } #
+          runit = bna._parseFile(fullpath, cache)
+          unit.requires.push {
+            name : modulename
+            node
+            unit: runit
+          }
         catch e
           unit.warnings.push
-            node: {loc: {file: fullpath, line: '?', arguments: [{'value': modulename}] }},
+            node: {loc: {file: fullpath, line: '?'}},
             reason: "resolve"
 
-        if not e  # only if resolved ok
-          # fake node in ast
-          if (r for r in unit.requires when r.unit.fpath == fullpath).length == 0
-            node = {loc: {file: fullpath, line: '?', arguments: [{'value': modulename}] }}
-            runit = bna._parseFile(fullpath, cache)
-            unit.requires.push {
-              node
-              unit: runit
-            }
+      unit.warnings.push
+        locs: dynLocs
+        modules: dynamicModules,
+        reason: "nonconst"
 
     return unit;
   ,
@@ -711,7 +723,7 @@ module.exports = bna = {
       eval src
     catch e
       unit.warnings.push
-        node: {loc: {file: unit.fpath, line: '?'}, arguments: [{'value':''}]},
+        node: {loc: {file: unit.fpath, line: '?'}},
         reason: 'dynamicResolveError'
         error : e
     ret = _.unique(dmodules)

@@ -2,7 +2,7 @@
 
 optimist = require('optimist')
     .usage('Build modules and dependencies for app in the current dir.\nUsage: -b -p -c -f file -o out/')
-    .boolean(['b','p','c', 'q', 'w', 'l', 'v'])
+    .boolean(['b','p','c', 'q', 'w', 'l', 'v','jsx'])
     .alias('b', 'build')
     .alias('p', 'packagejson')
     .alias('c', 'copy')
@@ -13,11 +13,12 @@ optimist = require('optimist')
     .string("fuselib")
     .string('f')
     .string("o")
+    .describe("v", "print version")
     .describe('b', 'build app, same as -p -c together')
     .describe('p', 'write module dependencies to package.json')
     .describe('c', 'copy depended external modules to local node_modules dir')
     .describe('f', 'generate a single executable js file, see doc.')
-    .describe("v", "print version")
+    .describe('jsx', 'enable react jsx file support')
     .describe('fuselib', 'fuse to a library to export modules, see doc.')
     .describe("o", 'specify output file or dir for fuse. Optional, default is ./')
     .describe("q", 'quite mode. No warnings')
@@ -35,9 +36,10 @@ _ = require("underscore")
 if argv.v
   console.log(require("../package.json").version);
   return;
-if argv.quiet then bna.quiet = true
 
-if (argv.line) then bna.locations = true
+if argv.quiet then bna.quiet = true
+if argv.line then bna.locations = true
+if argv.jsx then bna.enableJsx()
 
 if (!(argv.b || argv.p || argv.c || argv.f || argv.fuselib))
 
@@ -146,22 +148,21 @@ else if argv.f or argv.fuselib
         watchers = {}
         return (units)=>
           newWatchers = {}
-          for unit in units
+          for unit in units when !unit.isCore
             if unit.fpath of watchers
               newWatchers[unit.fpath] = watchers[unit.fpath]
               delete watchers[unit.fpath]
             else do(unit)=>
-              console.log "Begin watching #{path.relative('.', unit.fpath)}"
+              if not argv.quiet then console.log "Begin watching #{path.relative('.', unit.fpath)}"
               #newWatchers[unit.fpath] = (fs.watch unit.fpath, (e)=> onChange(e, unit.fpath))
               newWatchers[unit.fpath] = (fs.watchFile unit.fpath, (e)=> onChange(e, unit.fpath))
           for fp,watcher of watchers
-            console.log "Stop watching  #{path.relative('.', fp)}"
+            if not argv.quiet then console.log "Stop watching  #{path.relative('.', fp)}"
             #watcher.close()
             fs.unwatchFile fp
           watchers = newWatchers
 
       # the initial fuse, then start watching!
-      dofuse (units)=>
-        watch(units, onChange)
+      dofuse watch
   else
     dofuse()

@@ -101,7 +101,7 @@ module.exports = fuse = {
         code += src
         code += "}};\n"
       else
-        lmapcode = ("        '#{r.node.arguments[0].value}': '#{r.unit.key}'" for r in unit.requires).join(",\n")
+        lmapcode = ("        '#{r.name}': '#{r.unit.key}'" for r in unit.requires).join(",\n")
         pkginfo = if unit.package then "#{unit.package.name}@#{unit.package.version or ''}" else ""
         pkginfo += "(#{path.basename(unit.fpath)})"
         code += """
