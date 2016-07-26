@@ -587,7 +587,7 @@ module.exports = bna = {
     [ret, warnings]
 
   ###
-  # helper: parse source code, analyze require, return results in a nested tree structure
+  # helper: parse source code, recursively analyze require in code, return results in a nested tree structure
   # filepath: must be absolute path
   ###
   _parseFile : (filepath, cache, overrideContent)->
