@@ -397,11 +397,12 @@ module.exports = bna = {
       'dynamicResolveError' : 'dynamic required module resolve error'
     }
     pe = (e)-> if e then ', ' + e else ''
-    "#{path.relative('.',node.loc.file)}:#{node.loc.line}: #{msgs[reason]}#{pe(error)}" \
-      for {node, reason, error} in warnings when reason != 'nonconst'
+    warnings1 = ("#{path.relative('.',node.loc.file)}:#{node.loc.line}: #{msgs[reason]}#{pe(error)}" \
+      for {node, reason, error} in warnings when reason != 'nonconst')
     lines = (locs)=>((l.line for l in locs).join(','))
-    "#{path.relative('.',locs[0].file)}:#{lines(locs)}: #{msgs[reason]}#{modules.join(',')}" \
-      for {reason, locs, modules} in warnings when reason == 'nonconst'
+    warnings2 = ("#{path.relative('.',locs[0].file)}:#{lines(locs)}: #{msgs[reason]}#{modules.join(',')}" \
+      for {reason, locs, modules} in warnings when reason == 'nonconst')
+    warnings1.concat(warnings2)
 
   # fuse filepath, write output to directory dstdir, using opts
   # opts: aslib: true|false
@@ -596,12 +597,13 @@ module.exports = bna = {
     # resolving dynamic require trick: evaluate js once, record all required modules....
     if dynLocs.length > 0 then do=>
       dynamicModules = bna.detectDynamicRequires(unit)
-      # filter out already required string modules
-      dynamicModules = (m for m in dynamicModules when not _(unit.requires).find((e)=>e.name==m))
+      # filter out already required string modules, and nulls
+      dynamicModules = (m for m in dynamicModules when m and not _(unit.requires).find((e)=>e.name==m))
 
       for modulename in dynamicModules
         # filter out required modules that are already parsed
         e = undefined
+        fullpath = ''   # catch block needs this too
         try
           fullpath = resolver.sync(modulename, {
             extensions: ['.js', '.node', '.json'],
@@ -617,8 +619,9 @@ module.exports = bna = {
           }
         catch e
           unit.warnings.push
-            node: {loc: {file: fullpath, line: '?'}},
-            reason: "resolve"
+            node: {loc: {file: filepath, line: '?'}},
+            reason: "dynamicResolveError",
+            error : e
 
       unit.warnings.push
         locs: dynLocs
@@ -630,33 +633,30 @@ module.exports = bna = {
 
   # the trick to detect dynamicRequire, is to run the code with a spy 'require' which captures
   # there parameters....  this works in 90%+ scenarios
-  # perhaps the better way is to launch an external node process, run code with spy require, and
-  # capture the modules, this covers more scenarios, but is more costly...
   detectDynamicRequires : (unit)->
-    dmodules = []
     src = """
+    var _sysreq = require;
     (function() {
-    var exports = {}
-    var module = { "exports": exports }
-    var __filename = "#{unit.fpath}"
-    var __dirname = "#{path.dirname(unit.fpath)}"
+    var dmodules = []
     var require = function(module) {
       dmodules.push(module)
-      return function(){}   // require("blah").x.x  will still fail, but what can u do?!
+      return _sysreq(module)
     };
     #{unit.src}
+    module.exports = dmodules;
     })()
     """
+    tmpfile = unit.fpath + ".bna.js";
+    fs.writeFileSync(tmpfile, src);
+    dmodules = []
     try
-      eval src
+      dmodules = _.unique(require(tmpfile));
     catch e
       unit.warnings.push
         node: {loc: {file: unit.fpath, line: '?'}},
         reason: 'dynamicResolveError'
         error : e
-    ret = _.unique(dmodules)
-    ret
-
-
-
+    finally
+      fs.unlinkSync(tmpfile)
+      return dmodules
 }
