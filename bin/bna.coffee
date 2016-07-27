@@ -19,11 +19,11 @@ optimist = require('optimist')
     .describe('c', 'copy depended external modules to local node_modules dir')
     .describe('f', 'generate a single executable js file, see doc.')
     .describe('jsx', 'enable react jsx file support')
-    .describe('fuselib', 'fuse to a library to export modules, see doc.')
-    .describe("o", 'specify output file or dir for fuse. Optional, default is ./')
+    .describe('fuselib', 'fuse to a file that exports all dependant modules.')
+    .describe("o", 'specify output file or dir for fuse. Optional, default is .')
     .describe("q", 'quite mode. No warnings')
     .describe('w', 'watch file: fuse on change')
-    .describe('l', 'parse line info')
+    .describe('l', 'print warnings with line number')
 ;
 
 argv = optimist.argv

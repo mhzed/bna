@@ -138,7 +138,7 @@ module.exports = fuse = {
       packages = {}
       for unit in fileUnits when unit.package
         if unit.package.name of packages
-          # key-ed by package name, therefore must resolve conficting version by appending version
+          # key-ed by package name, therefore must resolve conflicting version by appending version
           # to package name for the name of the key
           oldunit = packages[unit.package.name]
           if (oldunit.package.version != unit.package.version)

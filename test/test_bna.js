@@ -170,7 +170,7 @@ module.exports["test conflict modules in fusing as library"] = function(test) {
 
         test.equal( ms['p1@0.0.1'] !== undefined, true, "p1 exists");
         test.equal( ms['p1@0.0.2'] !== undefined, true, "p1 exists");
-        //fs.unlinkSync(path.join(ddir, "test.project.fuse.js"));
+        fs.unlinkSync(path.join(ddir, "test.project.fuse.js"));
         test.done();
 
     })
