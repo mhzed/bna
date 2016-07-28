@@ -6,6 +6,7 @@ _ = require("underscore")
 ast         = require("./ast");
 wrench      = require("wrench");
 util = require('util');
+log = require("lawg");
 require("colors")
 
 acornjsx    = require("acorn-jsx");
@@ -33,7 +34,7 @@ module.exports = bna = {
   locations : false,    # where to ask parser to save line locations
 
   warn  : (msg)->
-    if not bna.quiet then console.log msg.gray
+    if not bna.quiet then log msg.gray
 
   _cache : {},    # dep.path => { dep object }
 
@@ -141,7 +142,7 @@ module.exports = bna = {
       #bna.warn(msg) for msg in bna.prettyWarnings(warnings);
 
       unit = bna._collapsePackages(unit);
-      #console.log(JSON.stringify(unit,null, "  "));
+      #log(JSON.stringify(unit,null, "  "));
       dependencies = null;
       externDeps = null;
 
@@ -321,7 +322,7 @@ module.exports = bna = {
           else  # use semver to check
             oldVer = oldDep[name];
             if /:\/\//.test(oldVer) # test for url pattern
-              console.log util.format("Package %s is ignored due to non-semver %s",name, oldVer);
+              log util.format("Package %s is ignored due to non-semver %s",name, oldVer);
               delete oldDep[name]
               newdep[name] = oldVer   # keep old value
             else if (!semver.satisfies(version, oldVer))
@@ -364,7 +365,7 @@ module.exports = bna = {
   # binaryUnits: the binary units (.node files)
   # warnings: array of warnings: requires that are not processed
   # units: array of all file units
-  fuse : (filepath, outdir, moduleName, opts)->
+  _fuse : (filepath, outdir, moduleName, opts)->
     opts ?= {}        # aslib: true|false
     filepath = path.resolve(filepath)
     unit = bna._parseFile(filepath, {}, true, opts.fakeCode)
@@ -411,16 +412,16 @@ module.exports = bna = {
     filepath = path.resolve(filepath)
 
     moduleName = bna.generateModuleName(opts.dstfile or filepath)
-    [content, binaryunits, sourcemap, warnings, units] = bna.fuse(filepath, dstdir, moduleName, opts)
+    [content, binaryunits, sourcemap, warnings, units] = bna._fuse(filepath, dstdir, moduleName, opts)
     bna.warn(warning) for warning in bna.prettyWarnings(warnings)
     wrench.mkdirSyncRecursive(dstdir);
     dstfile = path.resolve(dstdir, opts.dstfile or (path.basename(filepath,".js") + ".fused.js"))
     smFile = dstfile + ".map"
 
-    console.log("Generating #{path.relative('.', dstfile)}")
+    log("Generating #{path.relative('.', dstfile)}")
     fs.writeFileSync(dstfile, content);
     if sourcemap
-      console.log("Generating #{path.relative('.', smFile)}")
+      log("Generating #{path.relative('.', smFile)}")
       sourcemap.file = path.basename(dstfile)
       fs.writeFileSync(smFile, JSON.stringify(sourcemap, null, 2));
       fs.appendFileSync(dstfile, "\n//# sourceMappingURL=#{path.basename(smFile)}")
@@ -476,7 +477,7 @@ module.exports = bna = {
 
     scandir(dirpath, ()->
       if not fakeCode
-        console.log("No files detected");
+        log("No files detected");
       else
         opts.fakeCode = fakeCode
         units = bna.fuseTo(path.resolve(dirpath, "lib.js"), dstdir, opts)
@@ -562,7 +563,7 @@ module.exports = bna = {
       if ifStoreSrc then unit.src = src
       code = jsParse(src)
     catch e
-      console.log ("Ignoring #{filepath}, failed to parse due to: #{e}")
+      log ("Ignoring #{filepath}, failed to parse due to: #{e}")
       return unit
     # 1st pass, traverse ast tree, resolve all const-string requires if possible
     dynLocs = []  # store dynamic require locations
@@ -650,7 +651,8 @@ module.exports = bna = {
     fs.writeFileSync(tmpfile, src);
     dmodules = []
     try
-      dmodules = _.unique(require(tmpfile));
+      _r = require    # prevent warning when fusing bna itself
+      dmodules = _.unique(_r(tmpfile));
     catch e
       unit.warnings.push
         node: {loc: {file: unit.fpath, line: '?'}},

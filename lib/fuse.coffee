@@ -12,6 +12,7 @@
 path = require "path"
 fs   = require "fs"
 _ = require("underscore")
+log = require "lawg"
 
 
 module.exports = fuse = {
@@ -168,7 +169,7 @@ module.exports = fuse = {
       try
         sm = JSON.parse(fs.readFileSync(url))
       catch e
-        if verbose then console.log "Skipped invalid source map file #{path.relative(baseDir,url)}"
+        if verbose then log "Skipped invalid source map file #{path.relative(baseDir,url)}"
         continue
 
       # if sm itself consists of concatenated sections, merge them
