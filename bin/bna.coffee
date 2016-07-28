@@ -1,23 +1,23 @@
 #!/usr/bin/env coffee
 
 optimist = require('optimist')
-    .usage('Build modules and dependencies for app in the current dir.\nUsage: -b -p -c -f file -o out/')
-    .boolean(['b','p','c', 'q', 'w', 'l', 'v','jsx'])
-    .alias('b', 'build')
+    .usage('Build modules and dependencies for app in the current dir.\nUsage: bna .')
+    .boolean(['p','c', 'q', 'w', 'l', 'v','jsx', 'm'])
     .alias('p', 'packagejson')
     .alias('c', 'copy')
     .alias('f', 'fuse')
     .alias('q', 'quiet')
     .alias('l', 'line')
     .alias('v', 'version')
+    .alias('m', 'map')
     .string("fuselib")
     .string('f')
     .string("o")
     .describe("v", "print version")
-    .describe('b', 'build app, same as -p -c together')
     .describe('p', 'write module dependencies to package.json')
     .describe('c', 'copy depended external modules to local node_modules dir')
     .describe('f', 'generate a single executable js file, see doc.')
+    .describe('m', 'generate source map for fuse option')
     .describe('jsx', 'enable react jsx file support')
     .describe('fuselib', 'fuse to a file that exports all dependant modules.')
     .describe("o", 'specify output file or dir for fuse. Optional, default is .')
@@ -31,8 +31,7 @@ bna = require("../lib/bna");
 fs = require("fs");
 path = require("path");
 _ = require("underscore")
-
-
+log = require('lawg')
 if argv.v
   console.log(require("../package.json").version);
   return;
@@ -41,7 +40,7 @@ if argv.quiet then bna.quiet = true
 if argv.line then bna.locations = true
 if argv.jsx then bna.enableJsx()
 
-if (!(argv.b || argv.p || argv.c || argv.f || argv.fuselib))
+if (!(argv.p || argv.c || argv.f || argv.fuselib))
 
   [targetPath] = argv._
   if not targetPath
@@ -66,35 +65,22 @@ if (!(argv.b || argv.p || argv.c || argv.f || argv.fuselib))
       deps = ("#{k}@#{v}" for k,v of bna.fileDep(targetPath)[0])
       console.log("Dependencies are:")
       console.log deps.sort()
-
 else if (argv.p)
-    bna.writePackageJson(process.cwd(), (err, removedPackages)->
-        if (err) then console.log(err.stack);
-        else
-          if removedPackages.length then console.log("Removed unused packages: " + removedPackages);
-          console.log("package.json dependencies updated");
-    )
+  bna.writePackageJson(process.cwd(), (err, removedPackages)->
+    if (err) then console.log(err.stack);
+    else
+      if removedPackages.length then console.log("Removed unused packages: " + removedPackages);
+      console.log("package.json dependencies updated");
+  )
 else if (argv.c)
-    bna.copyExternDependModules(process.cwd(), (msg)->
-        console.log(msg);
-    , (err)->
-        if (err) then console.log(err.stack);
-        else console.log("copying finished");
-    )
-else if (argv.b)
-    bna.writePackageJson(process.cwd(), (err, removedPackages)->
-        if (err) then console.log(err.stack);
-        else
-          if removedPackages.length then console.log("Removd unused packages: " + removedPackages);
-          else
-            console.log("package.json dependencies updated");
-            bna.copyExternDependModules(process.cwd(), (msg)->
-                console.log(msg);
-            , (err)->
-                if (err) then console.log(err.stack);
-                else console.log("copying finished");
-            )
-    )
+  copied = false
+  bna.copyExternDependModules(process.cwd(), (msg)->
+    console.log(msg);
+    copied = true
+  , (err)->
+    if (err) then console.log(err.stack);
+    else console.log(if copied then "copying finished" else "nothing to copy");
+  )
 else if argv.f or argv.fuselib
   resolver    = require("resolve");
   ddir = "."
@@ -109,8 +95,7 @@ else if argv.f or argv.fuselib
     else fpath = mfile    # fuse the main file
 
   if not fpath
-    console.log "Nothing to fuse, are you in a module folder?  See help below\n"
-    console.log optimist.help()
+    console.log "Nothing to fuse, are you in a project folder with package.json?"
     process.exit(1)
 
   console.log "Fusing file #{path.relative('.',fpath)}"
@@ -125,10 +110,10 @@ else if argv.f or argv.fuselib
   isDir = fs.statSync(fpath).isDirectory()
   dofuse = (cb)=>
     if (isDir)
-      bna.fuseDirTo(fpath, ddir, {aslib: argv.fuselib?, dstfile: dstfile }, cb);
+      bna.fuseDirTo(fpath, ddir, {aslib: argv.fuselib?, dstfile: dstfile, generateSm: argv.m }, cb);
     else
       process.nextTick ()=>
-        units = bna.fuseTo(fpath, ddir, {aslib: argv.fuselib?, dstfile: dstfile})
+        units = bna.fuseTo(fpath, ddir, {aslib: argv.fuselib?, dstfile: dstfile, generateSm: argv.m})
         if (cb) then cb(units)
 
 

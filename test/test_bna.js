@@ -166,24 +166,24 @@ module.exports["test fuse binary components"] = function(test) {
 };
 
 module.exports["test conflict modules in fusing as library"] = function(test) {
-    var pdir = path.resolve(__dirname, "./projects");
-    var ddir = path.resolve(__dirname, "./");
-    bna.fuseDirTo(pdir, ddir, { aslib: true, dstfile: "test.project.fuse.js"}, function() {
-        var ms = require(path.resolve(__dirname, "test.project.fuse.js"))
+  var pdir = path.resolve(__dirname, "./projects");
+  var ddir = path.resolve(__dirname, "./");
+  bna.fuseDirTo(pdir, ddir, { aslib: true, dstfile: "test.project.fuse.js"}, function() {
+    var ms = require(path.resolve(__dirname, "test.project.fuse.js"))
 
-        test.equal( ms['p1@0.0.1'] !== undefined, true, "p1 exists");
-        test.equal( ms['p1@0.0.2'] !== undefined, true, "p1 exists");
-        fs.unlinkSync(path.join(ddir, "test.project.fuse.js"));
-        test.done();
+    test.equal( ms['p1@0.0.1'] !== undefined, true, "p1 exists");
+    test.equal( ms['p1@0.0.2'] !== undefined, true, "p1 exists");
+    fs.unlinkSync(path.join(ddir, "test.project.fuse.js"));
+    test.done();
 
-    })
+  })
 };
 
 module.exports["test source map with coffee"] = function(test) {
   "use strict";
   var dir = path.resolve(__dirname, "sourcemap");
   var fusedfile = path.resolve(dir, "main.fused.js");
-  bna.fuseTo(path.resolve(dir, "main.js"), dir );
+  bna.fuseTo(path.resolve(dir, "main.js"), dir, {generateSm:true} );
 
   try {
     var m = require(fusedfile);
@@ -194,9 +194,8 @@ module.exports["test source map with coffee"] = function(test) {
   fs.unlinkSync(fusedfile);
   fs.unlinkSync(fusedfile + ".map");
 
-
-  var fusedfile = path.resolve(dir, "index2.fused.js");
-  bna.fuseTo(path.resolve(dir, "node_modules/coffeem1/index2.js"), dir );
+  fusedfile = path.resolve(dir, "index2.fused.js");
+  bna.fuseTo(path.resolve(dir, "node_modules/coffeem1/index2.js"), dir, {generateSm:true} );
   try {
     var m = require(fusedfile);
     test.ok(false, "should've thrown");
@@ -205,5 +204,18 @@ module.exports["test source map with coffee"] = function(test) {
   }
   fs.unlinkSync(fusedfile);
   fs.unlinkSync(fusedfile + ".map");
+
+  fusedfile = path.resolve(dir, "main3.fused.js");
+  bna.fuseTo(path.resolve(dir, "main3.js"), dir , {generateSm:true});
+  try {
+    var m = require(fusedfile);
+    test.ok(false, "should've thrown");
+  } catch (e) {
+    test.ok(/l3\.js\:8\:/.test(e.stack), "correctly mapped to js position");
+  }
+  fs.unlinkSync(fusedfile);
+  fs.unlinkSync(fusedfile + ".map");
+
+
   test.done();
 };

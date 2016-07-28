@@ -13,23 +13,25 @@ path = require "path"
 fs   = require "fs"
 _ = require("underscore")
 log = require "lawg"
-
+sourceMap = require("source-map")
 
 module.exports = fuse = {
 
-  # baseDir: for determining source map original source file location, should be the dir where output file is written
+  # baseDir: where output file is at, for determining source map original source file location
   # moduleName: main module name, module will always be stored in root[moduleName], where root is the root scope
   # units:  array of units
   # asLib:  when false (default), generate code normally: runs the last file in units
   #         when true, generate code that export all detected modules as an object,
   # includePackage: if true, include module's package.json via member 'package', default is false
+  # prependCode: code to put at the top of the fused file
+
   # Returns
   # srcCode:  string, the fused source code
   # binaryUnits: array of binary (*.node) modules, to bundle the final executable package do:
   #              copy from <unit.fpath> to <dst_dir>/<unit.key> for unit in binaryUnits
   # sourceMap:  source map content string
 
-  generate : ({baseDir, moduleName, units, asLib, includePackage, verbose, prependCode})->
+  generate : ({baseDir, moduleName, units, asLib, generateSm, includePackage, prependCode})->
     coreUnits = (unit for unit in units when unit.isCore)
     binaryUnits = (unit for unit in units when unit.isBinary)
     fileUnits = (unit for unit in units when not unit.isCore and not unit.isBinary)
@@ -87,7 +89,7 @@ module.exports = fuse = {
       i = i + 1 # rebase to 1
       smMatch = smRegex.exec(unit.src)
       if (smMatch)
-        src = unit.src.replace("//# sourceMappingURL=", "// sourceMappingURL=")
+        unit.src = src = unit.src.replace("//# sourceMappingURL=", "// sourceMappingURL=")
         unit.sm = { url: smMatch[1] }
       else
         src = unit.src
@@ -98,7 +100,7 @@ module.exports = fuse = {
             sts: 1,
             mod: { exports:
           """
-        if (unit.sm) then unit.sm.line = fuse._lc(code)
+        if generateSm then unit.smline = fuse._lc(code)
         code += src
         code += "}};\n"
       else
@@ -124,7 +126,7 @@ module.exports = fuse = {
               __m['#{unit.key}'].sts = 0;
           //******** begin file #{pkginfo} ************\n
           """
-        if (unit.sm) then unit.sm.line = fuse._lc(code) # keep track of line for sourcemap
+        if generateSm then unit.smline = fuse._lc(code)
         code += src
         code += """
 
@@ -155,42 +157,57 @@ module.exports = fuse = {
       code += "\nreturn __m.__r('#{_(fileUnits).last().key}');\n";
     code += "\n},this));"
 
-    [code, binaryUnits, fuse._generateSourceMap(baseDir, code, fileUnits, verbose)]
+    [code, binaryUnits, if generateSm then fuse._generateSourceMap(baseDir, code, fileUnits) else null]
 
   # see https://docs.google.com/document/d/1U1RGAehQwRypUTovF1KRlpiOFze0b-_2gc6fAH0KY0k/edit?pli=1#
   # section "supporting post processing"
   # baseDir:  the original src file location will be calculated relative to baseDir
-  _generateSourceMap : (baseDir, code, units, verbose)->
+  _generateSourceMap : (baseDir, code, units)->
     sections = []
-    for unit in units when unit.sm
+    for unit in units
       unitDir = path.dirname(unit.fpath)
-      # really should support http, https, etc...
-      url = path.resolve(unitDir, unit.sm.url)
-      try
-        sm = JSON.parse(fs.readFileSync(url))
-      catch e
-        if verbose then log "Skipped invalid source map file #{path.relative(baseDir,url)}"
-        continue
+      if unit.sm
+        # TODO: should support http, https, etc...
+        url = path.resolve(unitDir, unit.sm.url)
+        try
+          sm = JSON.parse(fs.readFileSync(url))
+        catch e
+          log "Skipped invalid source map file #{path.relative(baseDir,url)}"
+          continue
 
-      # if sm itself consists of concatenated sections, merge them
-      if (sm.sections)
-        for sec,i in (sm.sections or [])
-          sec.offset.line += unit.sm.line
-          for s,i in sec.map.sources
-            sp = path.resolve(unitDir, (sm.sourceRoot || '') + s)
-            sec.map.sources[i] = path.relative(baseDir, sp)
-        sections.push sm.sections...
-      else
-        # concatenate sources into sections, with path resolved
-        for s,i in sm.sources
-          sp = path.resolve(unitDir, (sm.sourceRoot || '') + s)
-          sm.sources[i] = path.relative(baseDir, sp)
+        # if sm itself consists of concatenated sections, merge them
+        if (sm.sections)
+          for sec,i in (sm.sections or [])
+            sec.offset.line += unit.smline
+            for s,i in sec.map.sources
+              sp = path.resolve(unitDir,  s)
+              sec.map.sources[i] = path.relative(baseDir, sp)
+          sections.push sm.sections...
+        else
+          # concatenate sources into sections, with path resolved
+          for s,i in sm.sources
+            sp = path.resolve(unitDir, s)
+            sm.sources[i] = path.relative(baseDir, sp)
+          sections.push {
+            offset: {line : unit.smline, column : 0},
+            map : sm
+          }
+      else # js file has no matching source map file, generate it
+        SourceMapGenerator = sourceMap.SourceMapGenerator
+        srcfile = path.relative(baseDir, unit.fpath)
+        map = new SourceMapGenerator({file:srcfile})
+        lc = fuse._lc(unit.src)
+        if lc > 0
+          for line in [1..lc]   # 1 to 1 mapping for each line
+            map.addMapping({
+              source: srcfile,
+              original : {line, column:0},
+              generated : {line, column:0}
+            })
         sections.push {
-          offset: {line : unit.sm.line, column : 0},
-          map : sm
+          offset: {line: unit.smline, column: 0},
+          map: map.toJSON()
         }
-      # sm with a mixture of sources and sections are not supported, doesn't make sense anyway
-
     return if sections.length == 0 then null else {
       version : 3,
       file : '',

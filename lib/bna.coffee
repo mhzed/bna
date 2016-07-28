@@ -359,7 +359,7 @@ module.exports = bna = {
   # filepath:  path to the file to fuse
   # outdir : the output dir, needed for sourcemap concat
   # moduleName: name of main module, a global var of moduleName is created (for browser), set '' to not create
-  # opts: { aslib: true|false, fakeCode: "var x = require('x');" }
+  # opts: { aslib: true|false, prependCode: "var x = require('x');", generateSm: true|false }
   # return [content, binaryUnits, warnings, units]
   # content: "fused" source code
   # binaryUnits: the binary units (.node files)
@@ -368,8 +368,11 @@ module.exports = bna = {
   _fuse : (filepath, outdir, moduleName, opts)->
     opts ?= {}        # aslib: true|false
     filepath = path.resolve(filepath)
+    # fakeCode: internal param, used by fuseDirTo only.  When fusing a dir, need to create a fake
+    # file that requires all fused modules...
     unit = bna._parseFile(filepath, {}, true, opts.fakeCode)
 
+    if not outdir then outdir = path.dirname(filepath)
     # get all dependencies including self (filepath), deduplicated
     units = bna._flattenRequires(unit)
     warnings = _(unit.warnings for unit in units).flatten()
@@ -379,7 +382,7 @@ module.exports = bna = {
       moduleName,
       units,
       asLib: opts.aslib,
-      verbose : !bna.quiet
+      generateSm : opts.generateSm,
       prependCode : opts.prependCode or ''
     });
     ret.push [warnings, units]...
@@ -406,7 +409,7 @@ module.exports = bna = {
     warnings1.concat(warnings2)
 
   # fuse filepath, write output to directory dstdir, using opts
-  # opts: aslib: true|false
+  # opts: aslib: true|false, generateSm: true|false
   fuseTo : (filepath, dstdir, opts)->
     opts ?= {}
     filepath = path.resolve(filepath)
