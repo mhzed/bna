@@ -137,7 +137,7 @@ module.exports["test fuse circular"] = function(test) {
 
     var spath = require.resolve("./circular/main.js");
     var dpath = path.join(path.dirname(spath), "fused.js")
-    var src = bna.fuse(spath)[0];
+    var src = bna._fuse(spath)[0];
     fs.writeFileSync(dpath, src);
 
     var logs = require(spath);    // original
@@ -155,11 +155,14 @@ module.exports["test fuse binary components"] = function(test) {
     bna.fuseTo(spath, fusedir);
 
     //console.log(src);
-    test.equal(fs.existsSync(path.join(fusedir, "usews.fused.js")) , true, "fused file");
-    test.equal(fs.existsSync(path.join(fusedir, "xor.node")) , true, "binary 1");
-    test.equal(fs.existsSync(path.join(fusedir, "validation.node")) , true, "binary 2");
-    require("wrench").rmdirSyncRecursive(fusedir);
-    test.done()
+    function verify() {
+      test.equal(fs.existsSync(path.join(fusedir, "usews.fused.js")), true, "fused file");
+      test.equal(fs.existsSync(path.join(fusedir, "xor.node")), true, "binary 1");
+      test.equal(fs.existsSync(path.join(fusedir, "validation.node")), true, "binary 2");
+      require("wrench").rmdirSyncRecursive(fusedir);
+      test.done()
+    }
+    setTimeout(verify, 300);  // copy binary files are async, wait a bit
 };
 
 module.exports["test conflict modules in fusing as library"] = function(test) {
@@ -174,4 +177,33 @@ module.exports["test conflict modules in fusing as library"] = function(test) {
         test.done();
 
     })
+};
+
+module.exports["test source map with coffee"] = function(test) {
+  "use strict";
+  var dir = path.resolve(__dirname, "sourcemap");
+  var fusedfile = path.resolve(dir, "main.fused.js");
+  bna.fuseTo(path.resolve(dir, "main.js"), dir );
+
+  try {
+    var m = require(fusedfile);
+    test.ok(false, "should've thrown");
+  } catch (e) {
+    test.ok(/index\.coffee\:7/.test(e.stack), "correctly mapped to coffee position");
+  }
+  fs.unlinkSync(fusedfile);
+  fs.unlinkSync(fusedfile + ".map");
+
+
+  var fusedfile = path.resolve(dir, "index2.fused.js");
+  bna.fuseTo(path.resolve(dir, "node_modules/coffeem1/index2.js"), dir );
+  try {
+    var m = require(fusedfile);
+    test.ok(false, "should've thrown");
+  } catch (e) {
+    test.ok(/l2\.coffee\:3\:/.test(e.stack), "correctly mapped to coffee position");
+  }
+  fs.unlinkSync(fusedfile);
+  fs.unlinkSync(fusedfile + ".map");
+  test.done();
 };
