@@ -662,6 +662,7 @@ module.exports = bna = {
         reason: 'dynamicResolveError'
         error : e
     finally
+      delete require.cache[tmpfile]
       fs.unlinkSync(tmpfile)
       return dmodules
 }
