@@ -45,15 +45,37 @@
       if (fs.lstatSync(targetPath).isDirectory()) {
         console.log("Analyzing directory...");
         bna.dir.npmDependencies(targetPath, function(err, deps, externDeps) {
+          var d, edeps, extdep, i, j, k, len, len1, more, mpath, ref, require, results, v, version;
           if (err) {
             return console.log(err);
           } else {
             console.log("Module dependencies are:");
-            console.log(deps);
+            deps = (function() {
+              var results;
+              results = [];
+              for (k in deps) {
+                v = deps[k];
+                if (v !== null) {
+                  results.push(k + "@" + v);
+                }
+              }
+              return results;
+            })();
+            edeps = {};
             if (externDeps) {
-              console.log("Extern modules (node_modules located outside of current dir):");
-              return console.log(externDeps);
+              for (i = 0, len = externDeps.length; i < len; i++) {
+                ref = externDeps[i], require = ref.require, mpath = ref.mpath, version = ref.version;
+                edeps[require + "@" + version] = mpath;
+              }
             }
+            results = [];
+            for (j = 0, len1 = deps.length; j < len1; j++) {
+              d = deps[j];
+              extdep = edeps[d];
+              more = extdep ? " (" + extdep + ")" : "";
+              results.push(console.log("  " + d + more));
+            }
+            return results;
           }
         });
       } else {

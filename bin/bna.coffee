@@ -54,11 +54,17 @@ if (!(argv.p || argv.c || argv.f || argv.fuselib))
       bna.dir.npmDependencies(targetPath, (err, deps, externDeps)->
           if (err) then console.log(err);
           else
-              console.log("Module dependencies are:")
-              console.log(deps);
-              if externDeps
-                  console.log("Extern modules (node_modules located outside of current dir):")
-                  console.log(externDeps);
+            console.log("Module dependencies are:")
+            deps = ("#{k}@#{v}" for k,v of deps when v!=null)
+            edeps = {}
+            if externDeps
+              for {require,mpath,version} in externDeps
+                edeps["#{require}@#{version}"] = mpath
+
+            for d in deps
+              extdep = edeps[d]
+              more = if (extdep) then " (#{extdep})" else ""
+              console.log "  #{d}#{more}"
       )
     else
       console.log("Analyzing file...")
