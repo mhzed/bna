@@ -77,12 +77,6 @@ Same idea as browserify or webpack.
    can find the pure JS implementation easily in github.
 
 
-#### react-native
-
-Default react native server does not resolve linked npm module, bna does.  
-
-TODO: write a guide here
-
 ## credits
 
 If you find this useful, make sure you head to https://marijnhaverbeke.nl/fund/

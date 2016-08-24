@@ -128,8 +128,8 @@ module.exports = bna = {
    *
    * @param fpath          : path of main module file, should be what's returned by require.resolve('module')
    * @param cb(err, alldpes, externdeps, main)
-   *  alldeps:  all dependencies
-      externdeps:  dependences taht do not resite in fpath
+   *  alldeps:  all dependencies, array of string
+      externdeps:  dependences that do not reside in fpath
       main :       the main detail for fpath
   ###
   npmDependencies : (fpath, cb) ->
@@ -142,6 +142,7 @@ module.exports = bna = {
       #bna.warn(msg) for msg in bna.prettyWarnings(warnings);
 
       unit = bna._collapsePackages(unit);
+
       #log(JSON.stringify(unit,null, "  "));
       dependencies = null;
       externDeps = null;
@@ -150,10 +151,13 @@ module.exports = bna = {
         if (unit.package)
           memo[unit.mname] = unit.package.version;
         else if (!unit.isCore)
-          memo[unit.mname] = null;
+          memo[unit.mname] = null;    # required an individual file that's not a main file of a npm package
+          memo;
         return memo;
       , {});
       externDeps = bna.externDeps(unit);
+
+      #console.log(fpath, ", ", dependencies);
       cb(null, dependencies, externDeps, unit);
     catch e
       cb(e);
@@ -267,13 +271,13 @@ module.exports = bna = {
     fs.stat(mpath, (err, stat)->
       if (err) then return cb(err);
       f = if stat.isDirectory() then bna.dir.npmDependencies else bna.npmDependencies;
-      f(mpath, (err, alldeps, dependencies, main)->
+      f(mpath, (err, __d, extDependencies, main)->
 
         targetPath = path.join(main.mpath, "node_modules")
         if (!fs.existsSync(targetPath))
           wrench.mkdirSyncRecursive(targetPath);
         async.eachSeries(
-          dependencies,
+          extDependencies,
           (d, cb)->
             targetModulePath = path.join(targetPath, path.basename(d.mpath));
             progressCb(util.format("Copying '%s': %s => %s",
@@ -316,7 +320,8 @@ module.exports = bna = {
         # merge into oldDep
         _(deps).each((version, name)->
           if (version == null)
-            errList.push(util.format("%s is not versioned!",name));
+            #errList.push(util.format("%s is not versioned!",name));
+            return
           else if (!(name of oldDep))
             newdep[name] = version;
           else  # use semver to check

@@ -1,6 +1,6 @@
 {
   "name": "bna",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "Build commoNjs App",
   "main": "./lib/bna.js",
   "scripts": {
