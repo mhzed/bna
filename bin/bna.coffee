@@ -61,10 +61,15 @@ if (!(argv.p || argv.c || argv.f || argv.fuselib))
               for {require,mpath,version} in externDeps
                 edeps["#{require}@#{version}"] = mpath
 
+            pad = (str, n) =>
+              if (n > str.length) then str+=' ' for i in [0..n-str.length]
+              return str
+            npad = 0
+            (if d.length+1>npad then npad = d.length+1) for d in deps
             for d in deps
               extdep = edeps[d]
-              more = if (extdep) then " (#{extdep})" else ""
-              console.log "  #{d}#{more}"
+              more = if (extdep) then "(#{extdep})" else ""
+              console.log "  #{pad(d,npad)}#{more}"
       )
     else
       console.log("Analyzing file...")

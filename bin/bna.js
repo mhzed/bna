@@ -45,7 +45,7 @@
       if (fs.lstatSync(targetPath).isDirectory()) {
         console.log("Analyzing directory...");
         bna.dir.npmDependencies(targetPath, function(err, deps, externDeps) {
-          var d, edeps, extdep, i, j, k, len, len1, more, mpath, ref, require, results, v, version;
+          var d, edeps, extdep, j, k, l, len, len1, len2, m, more, mpath, npad, pad, ref, require, results, v, version;
           if (err) {
             return console.log(err);
           } else {
@@ -63,17 +63,35 @@
             })();
             edeps = {};
             if (externDeps) {
-              for (i = 0, len = externDeps.length; i < len; i++) {
-                ref = externDeps[i], require = ref.require, mpath = ref.mpath, version = ref.version;
+              for (j = 0, len = externDeps.length; j < len; j++) {
+                ref = externDeps[j], require = ref.require, mpath = ref.mpath, version = ref.version;
                 edeps[require + "@" + version] = mpath;
               }
             }
+            pad = (function(_this) {
+              return function(str, n) {
+                var i, l, ref1;
+                if (n > str.length) {
+                  for (i = l = 0, ref1 = n - str.length; 0 <= ref1 ? l <= ref1 : l >= ref1; i = 0 <= ref1 ? ++l : --l) {
+                    str += ' ';
+                  }
+                }
+                return str;
+              };
+            })(this);
+            npad = 0;
+            for (l = 0, len1 = deps.length; l < len1; l++) {
+              d = deps[l];
+              if (d.length + 1 > npad) {
+                npad = d.length + 1;
+              }
+            }
             results = [];
-            for (j = 0, len1 = deps.length; j < len1; j++) {
-              d = deps[j];
+            for (m = 0, len2 = deps.length; m < len2; m++) {
+              d = deps[m];
               extdep = edeps[d];
-              more = extdep ? " (" + extdep + ")" : "";
-              results.push(console.log("  " + d + more));
+              more = extdep ? "(" + extdep + ")" : "";
+              results.push(console.log("  " + (pad(d, npad)) + more));
             }
             return results;
           }
@@ -193,10 +211,10 @@
             var watchers;
             watchers = {};
             return function(units) {
-              var fp, i, len, newWatchers, unit, watcher;
+              var fp, j, len, newWatchers, unit, watcher;
               newWatchers = {};
-              for (i = 0, len = units.length; i < len; i++) {
-                unit = units[i];
+              for (j = 0, len = units.length; j < len; j++) {
+                unit = units[j];
                 if (!unit.isCore) {
                   if (unit.fpath in watchers) {
                     newWatchers[unit.fpath] = watchers[unit.fpath];
