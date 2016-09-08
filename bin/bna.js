@@ -44,23 +44,27 @@
     if (targetPath && fs.existsSync(targetPath)) {
       if (fs.lstatSync(targetPath).isDirectory()) {
         console.log("Analyzing directory...");
-        bna.dir.npmDependencies(targetPath, function(err, deps, externDeps) {
-          var d, edeps, extdep, j, k, l, len, len1, len2, m, more, mpath, npad, pad, ref, require, results, v, version;
+        bna.dir.npmDependencies(targetPath, function(err, deps, externDeps, unit, warnings) {
+          var edeps, extdep, j, k, l, len, len1, more, mpath, name, npad, pad, ref, ref1, require, results, sortedDeps, unresolved, v, version, w;
           if (err) {
             return console.log(err);
           } else {
-            console.log("Module dependencies are:");
-            deps = (function() {
-              var results;
+            unresolved = _.uniq((function() {
+              var j, len, results;
               results = [];
-              for (k in deps) {
-                v = deps[k];
-                if (v !== null) {
-                  results.push(k + "@" + v);
+              for (j = 0, len = warnings.length; j < len; j++) {
+                w = warnings[j];
+                if (w.reason === 'resolve') {
+                  results.push(w.node["arguments"][0].value);
                 }
               }
               return results;
-            })();
+            })());
+            if (unresolved.length > 0) {
+              console.log("Unresolved requires:");
+              console.log(unresolved);
+            }
+            console.log("Resolved module dependencies are:");
             edeps = {};
             if (externDeps) {
               for (j = 0, len = externDeps.length; j < len; j++) {
@@ -80,18 +84,36 @@
               };
             })(this);
             npad = 0;
-            for (l = 0, len1 = deps.length; l < len1; l++) {
-              d = deps[l];
-              if (d.length + 1 > npad) {
-                npad = d.length + 1;
+            for (k in deps) {
+              v = deps[k];
+              if (v !== null) {
+                if ((k.length + v.length + 2) > npad) {
+                  npad = k.length + v.length + 2;
+                }
               }
             }
+            sortedDeps = {};
+            ref1 = _.keys(deps).sort();
+            for (l = 0, len1 = ref1.length; l < len1; l++) {
+              k = ref1[l];
+              sortedDeps[k] = deps[k];
+            }
+            deps = sortedDeps;
             results = [];
-            for (m = 0, len2 = deps.length; m < len2; m++) {
-              d = deps[m];
-              extdep = edeps[d];
-              more = extdep ? "(" + extdep + ")" : "";
-              results.push(console.log("  " + (pad(d, npad)) + more));
+            for (k in deps) {
+              v = deps[k];
+              if (v === null) {
+                if (!/[\/\\]/.test(k)) {
+                  results.push(console.log("  " + k));
+                } else {
+                  results.push(void 0);
+                }
+              } else {
+                name = k + "@" + v;
+                extdep = edeps[name];
+                more = extdep ? "(" + extdep + ")" : "";
+                results.push(console.log("  " + (pad(name, npad)) + more));
+              }
             }
             return results;
           }

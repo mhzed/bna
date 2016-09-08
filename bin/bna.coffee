@@ -51,11 +51,17 @@ if (!(argv.p || argv.c || argv.f || argv.fuselib))
   if (targetPath and fs.existsSync(targetPath))
     if fs.lstatSync(targetPath).isDirectory()
       console.log("Analyzing directory...")
-      bna.dir.npmDependencies(targetPath, (err, deps, externDeps)->
+      bna.dir.npmDependencies(targetPath, (err, deps, externDeps, unit, warnings)->
           if (err) then console.log(err);
           else
-            console.log("Module dependencies are:")
-            deps = ("#{k}@#{v}" for k,v of deps when v!=null)
+            #bna.warn(msg) for msg in bna.prettyWarnings(warnings);
+            unresolved = _.uniq(w.node.arguments[0].value for w in warnings when w.reason is 'resolve')
+            if unresolved.length > 0
+              console.log("Unresolved requires:")
+              console.log unresolved
+
+            console.log("Resolved module dependencies are:")
+
             edeps = {}
             if externDeps
               for {require,mpath,version} in externDeps
@@ -65,11 +71,20 @@ if (!(argv.p || argv.c || argv.f || argv.fuselib))
               if (n > str.length) then str+=' ' for i in [0..n-str.length]
               return str
             npad = 0
-            (if d.length+1>npad then npad = d.length+1) for d in deps
-            for d in deps
-              extdep = edeps[d]
-              more = if (extdep) then "(#{extdep})" else ""
-              console.log "  #{pad(d,npad)}#{more}"
+            (if (k.length+v.length+2)>npad then npad = k.length+v.length+2) for k,v of deps when v != null
+            sortedDeps = {}
+            sortedDeps[k] = deps[k] for k in _.keys(deps).sort()
+            deps = sortedDeps;
+
+            for k,v of deps
+              if (v == null)
+                if (!/[\/\\]/.test(k))  # do not print orphane files... they are just noises
+                  console.log "  #{k}"
+              else
+                name = "#{k}@#{v}"
+                extdep = edeps[name]
+                more = if (extdep) then "(#{extdep})" else ""
+                console.log "  #{pad(name,npad)}#{more}"
       )
     else
       console.log("Analyzing file...")

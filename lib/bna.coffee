@@ -128,18 +128,19 @@ module.exports = bna = {
    *
    * @param fpath          : path of main module file, should be what's returned by require.resolve('module')
    * @param cb(err, alldpes, externdeps, main)
-   *  alldeps:  all dependencies, array of string
+   *  alldeps:  all dependencies, an object, value could be:
+                - string,  single version
+                - array of string, multiple versions
+                - null, key is either a built-in module, or a full path file (not a module main file)
       externdeps:  dependences that do not reside in fpath
       main :       the main detail for fpath
+      warnings :   require resolve warnings
   ###
   npmDependencies : (fpath, cb) ->
     try
       unit = bna._parseFile(fpath, bna._cache);
 
-      # warn about dynamic requires??
-      #units = bna._flattenRequires(unit)
-      #warnings = _(unit.warnings for unit in units).flatten()
-      #bna.warn(msg) for msg in bna.prettyWarnings(warnings);
+      warnings = _(unit.warnings for unit in bna._flattenRequires(unit)).flatten()
 
       unit = bna._collapsePackages(unit);
 
@@ -147,18 +148,22 @@ module.exports = bna = {
       dependencies = null;
       externDeps = null;
 
+
       dependencies = _(unit.requires).reduce((memo, unit)->
         if (unit.package)
           memo[unit.mname] = unit.package.version;
-        else if (!unit.isCore)
-          memo[unit.mname] = null;    # required an individual file that's not a main file of a npm package
+        else
+          if (unit.isCore)
+            memo[unit.fpath] = null;    # required an individual file that's not a main file of a npm package
+          else
+            memo[unit.fpath] = null;
           memo;
         return memo;
       , {});
       externDeps = bna.externDeps(unit);
 
       #console.log(fpath, ", ", dependencies);
-      cb(null, dependencies, externDeps, unit);
+      cb(null, dependencies, externDeps, unit, warnings);
     catch e
       cb(e);
   ,
@@ -236,12 +241,14 @@ module.exports = bna = {
       npmDependencies : (dir, cb)->
         alldeps = {};
         allextdeps = [];
+        allwarnings = [];
         bna.dir._scanDir(dir,
           (file, isDir, cb)->
             f = if isDir then bna.dir.npmDependencies else bna.npmDependencies;
-            f(file, (err, deps, extdeps)->
+            f(file, (err, deps, extdeps, main, warnings)->
                 _(alldeps).extend(deps);
                 allextdeps = _(allextdeps).concat(extdeps);
+                allwarnings = _(allwarnings).concat(warnings);
                 cb(err);
             )
           ,
@@ -254,7 +261,7 @@ module.exports = bna = {
             .filter((d)->return d.mpath.indexOf(dir) != 0)
             .value();
 
-            cb(err, alldeps, allextdeps, {mpath:dir} );
+            cb(err, alldeps, allextdeps, {mpath:dir},allwarnings );
 
         )
   }
