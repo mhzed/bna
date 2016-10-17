@@ -548,7 +548,9 @@ module.exports = bna = {
     }
     cache[filepath] = unit
     if isCore or isBinary then return unit
-    if path.extname(filepath).toLowerCase() == ".json" then return unit
+    if path.extname(filepath).toLowerCase() == ".json"
+      if ifStoreSrc then unit.src = fs.readFileSync(filepath).toString()
+      return unit
 
     # determine if parameter filepath itself represents a module, if so, mark the module by setting the
     # package member
