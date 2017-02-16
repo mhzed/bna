@@ -10,9 +10,11 @@ optimist = require('optimist')
     .alias('l', 'line')
     .alias('v', 'version')
     .alias('m', 'map')
+    .alias('i', 'ignore')
     .string("fuselib")
     .string('f')
     .string("o")
+    .string("ignore")
     .describe("v", "print version")
     .describe('p', 'write module dependencies to package.json')
     .describe('c', 'copy depended external modules to local node_modules dir')
@@ -24,6 +26,7 @@ optimist = require('optimist')
     .describe("q", 'quite mode. No warnings')
     .describe('w', 'watch file: fuse on change')
     .describe('l', 'print warnings with line number')
+    .describe("ignore", "specify ignored modules deliminated by comma,for fuse only")
 ;
 
 argv = optimist.argv
@@ -134,12 +137,13 @@ else if argv.f or argv.fuselib
       ddir = path.dirname(ddir)
 
   isDir = fs.statSync(fpath).isDirectory()
+  ignoreMods = if argv.ignore then argv.ignore.split(',') else []
   dofuse = (cb)=>
     if (isDir)
-      bna.fuseDirTo(fpath, ddir, {aslib: argv.fuselib?, dstfile: dstfile, generateSm: argv.m }, cb);
+      bna.fuseDirTo(fpath, ddir, {aslib: argv.fuselib?, dstfile: dstfile, generateSm: argv.m, ignoreMods }, cb);
     else
       process.nextTick ()=>
-        units = bna.fuseTo(fpath, ddir, {aslib: argv.fuselib?, dstfile: dstfile, generateSm: argv.m})
+        units = bna.fuseTo(fpath, ddir, {aslib: argv.fuselib?, dstfile: dstfile, generateSm: argv.m, ignoreMods})
         if (cb) then cb(units)
 
 

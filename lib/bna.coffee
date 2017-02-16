@@ -138,7 +138,7 @@ module.exports = bna = {
   ###
   npmDependencies : (fpath, cb) ->
     try
-      unit = bna._parseFile(fpath, bna._cache);
+      unit = bna._parseFile(null, fpath, bna._cache);
 
       warnings = _(unit.warnings for unit in bna._flattenRequires(unit)).flatten()
 
@@ -382,7 +382,7 @@ module.exports = bna = {
     filepath = path.resolve(filepath)
     # fakeCode: internal param, used by fuseDirTo only.  When fusing a dir, need to create a fake
     # file that requires all fused modules...
-    unit = bna._parseFile(filepath, {}, true, opts.fakeCode)
+    unit = bna._parseFile(null, filepath, {}, true, opts.fakeCode, opts.ignoreMods)
 
     if not outdir then outdir = path.dirname(filepath)
     # get all dependencies including self (filepath), deduplicated
@@ -505,7 +505,7 @@ module.exports = bna = {
   # warnings is an array of string
   fileDep : (filepath)->
     filepath = path.resolve(filepath)
-    unit = bna._parseFile(filepath, {})
+    unit = bna._parseFile(null, filepath, {})
     getreqs = (unit, cache)->
       if unit.fpath of cache then return cache[unit.fpath]
       cache[unit.fpath] = units = []
@@ -528,14 +528,14 @@ module.exports = bna = {
   # helper: parse source code, recursively analyze require in code, return results in a nested tree structure
   # filepath: must be absolute path
   ###
-  _parseFile : (filepath, cache, ifStoreSrc, fakeCode)->
+  _parseFile : (requireName, filepath, cache, ifStoreSrc, fakeCode, coreModules)->
     if filepath of cache then return cache[filepath]
-    isCore = not /[\\\/]/.test(filepath);
+    isCore = (requireName in coreModules) or not /[\\\/]/.test(filepath) ;
     isBinary = /\.node$/i.test(filepath)
     unit = {
       isCore  : isCore,     # built-in nodejs modules
       isBinary : isBinary,  # binary modules, ".node" extension
-      fpath : filepath,     # the file path
+      fpath : if isCore then requireName else filepath,     # the file path
       mpath : '',           # the path of module that contains this file
       mname : '',           # the module name
       src   : "",
@@ -603,7 +603,7 @@ module.exports = bna = {
             reason: "resolve"
 
         if not e
-          runit = bna._parseFile(fullpath, cache,ifStoreSrc)
+          runit = bna._parseFile(modulename, fullpath, cache,ifStoreSrc, null, coreModules)
           unit.requires.push
             name : modulename
             node: node,
@@ -629,7 +629,7 @@ module.exports = bna = {
           });
           # only if resolved ok
           node = {loc: {file: fullpath, line: '?'} } #
-          runit = bna._parseFile(fullpath, cache, ifStoreSrc)
+          runit = bna._parseFile(modulename, fullpath, cache, ifStoreSrc, null, coreModules)
           unit.requires.push {
             name : modulename
             node
