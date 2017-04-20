@@ -530,7 +530,7 @@ module.exports = bna = {
   ###
   _parseFile : (requireName, filepath, cache, ifStoreSrc, fakeCode, coreModules)->
     if filepath of cache then return cache[filepath]
-    isCore = (requireName in coreModules) or not /[\\\/]/.test(filepath) ;
+    isCore = (coreModules && (requireName in coreModules)) or not /[\\\/]/.test(filepath) ;
     isBinary = /\.node$/i.test(filepath)
     unit = {
       isCore  : isCore,     # built-in nodejs modules
